@@ -14,7 +14,7 @@ args = parser.parse_args()
 
 df = pd.read_csv(args.infile, sep=' ', names=('time', 'signal'))
 fig = plt.figure(figsize=(10, 10))
-plt.plot(time, sig)
+plt.plot(df['time'].to_numpy(), df['signal'].to_numpy())
 plt.xlabel('time (ns)')
 plt.ylabel('voltage (mV)')
 plt.savefig(args.outfile)
