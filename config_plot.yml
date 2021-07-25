@@ -1,0 +1,9 @@
+infiles: [spad_32V_ns.parquet.gzip]
+
+legnames: [test]
+
+range:
+    Vmin: -200.  # mV
+    Vmax: 200.  # mV
+    tmin: null  # ns
+    tmax: null  # ns
