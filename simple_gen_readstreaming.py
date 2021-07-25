@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-'''Readout signal from SPAD
+'''This example opens a 6000a driver device, sets up channel A that generates a sine wave and channels that reads it with the streaming functionality
 '''
 
 import argparse
@@ -19,10 +19,10 @@ from utils import (
 
 parser = argparse.ArgumentParser(description='Arguments')
 parser.add_argument('--channel', metavar='text', default='A', help='channel for readout')
-parser.add_argument('--npretrigger', type=int, default=10000, help='number of pre-trigger samples')
-parser.add_argument('--nposttrigger', type=int, default=90000, help='number of post-trigger samples')
-parser.add_argument('--sampleinterval', type=float, default=1., help='sample interval (ns)')
-parser.add_argument('--triggerthrs', type=int, default=-50, help='trigger threshold (mV)')
+parser.add_argument('--func', metavar='text', default='PICO_SINE', help='generated function')
+parser.add_argument('--ampl', type=float, default=1., help='peak-to-peak amplitude in V')
+parser.add_argument('--freq', type=int, default=1000000, help='frequency in Hz')
+parser.add_argument('--offset', type=float, default=0., help='offset in V')
 parser.add_argument("--outfilePDF", metavar='text', default='signal.pdf', help='pdf output file')
 parser.add_argument("--outfile", metavar='text', default='signal.parquet.gzip', help='parquet output file')
 parser.add_argument("--saveoutput", help="save parquet file", action="store_true")
@@ -40,7 +40,21 @@ status['openunit'] = ps.ps6000aOpenUnit(ctypes.byref(chandle), None, resolution)
 assert_pico_ok(status['openunit'])
 
 # preapare channel to read out signals
-readout_channel = turnon_readout_channel_DC(status, chandle, args.channel)
+readout_channel = turnon_readout_channel_DC(
+    status,
+    chandle,
+    args.channel
+)
+
+# generate a function using AWG
+generate_signal(
+    status,
+    chandle,
+    args.func,
+    peak_to_peak_volts=args.ampl,
+    offset_volts=args.offset,
+    frequency_hz=args.freq
+)
 
 # read out signal from channel
 sig, time = read_channel_streaming(
@@ -48,10 +62,7 @@ sig, time = read_channel_streaming(
     chandle,
     resolution,
     readout_channel,
-    n_pretrigger_samples=args.npretrigger,
-    n_posttrigger_samples=args.nposttrigger,
-    trigger_thrs=args.triggerthrs,
-    sample_interval=args.sampleinterval,
+    sample_interval=1,
     time_units='NS'
 )
 

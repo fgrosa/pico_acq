@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
-'''
-Utils methods to generate and read a signal with the picospe 6000a driver device
+'''Utils methods to generate and read a signal with the picospe 6000a driver device
 '''
 
 import ctypes
@@ -9,24 +8,31 @@ import string
 import numpy as np
 from picosdk.ps6000a import ps6000a as ps
 from picosdk.PicoDeviceEnums import picoEnum as enums
+from picosdk.PicoDeviceStructs import picoStruct as structs
 from picosdk.functions import adc2mV, assert_pico_ok
 
 def turnon_readout_channel_DC(status, chandle, channel_name='A'):
     '''
     Method to turn on a channel for DC readout
     '''
+
     # Set channel on
     channel_on = enums.PICO_CHANNEL[f'PICO_CHANNEL_{channel_name}']
     coupling = enums.PICO_COUPLING['PICO_DC']
-    channelRange = 7
-    # analogueOffset = 0 V
+    channel_range = 7
     bandwidth = enums.PICO_BANDWIDTH_LIMITER['PICO_BW_FULL']
-    status[f'setChannel{channel_name}'] = ps.ps6000aSetChannelOn(chandle, channel_on, coupling,
-                                                                 channelRange, 0, bandwidth)
+    status[f'setChannel{channel_name}'] = ps.ps6000aSetChannelOn(
+        chandle,
+        channel_on,
+        coupling,
+        channel_range,
+        0,  # analogueOffset = 0 V
+        bandwidth
+    )
     assert_pico_ok(status[f'setChannel{channel_name}'])
 
     # set other channels off
-    for ch in list(string.ascii_uppercase)[:channelRange+1]:
+    for ch in list(string.ascii_uppercase)[:channel_range+1]:
         if ch != channel_name:
             channel = enums.PICO_CHANNEL[f'PICO_CHANNEL_{ch}']
             status['setChannel', channel] = ps.ps6000aSetChannelOff(chandle, channel)
@@ -49,7 +55,12 @@ def generate_signal(status, chandle, func='PICO_SINE', **kwargs):
     # Set signal generator waveform
     wavetype = enums.PICO_WAVE_TYPE[func]
     buffer = (ctypes.c_int16 * buffer_length)()
-    status['sigGenWaveform'] = ps.ps6000aSigGenWaveform(chandle, wavetype, ctypes.byref(buffer), buffer_length)
+    status['sigGenWaveform'] = ps.ps6000aSigGenWaveform(
+        chandle,
+        wavetype,
+        ctypes.byref(buffer),
+        buffer_length
+    )
     assert_pico_ok(status['sigGenWaveform'])
 
     # Set signal generator range
@@ -71,105 +82,252 @@ def generate_signal(status, chandle, func='PICO_SINE', **kwargs):
     auto_clock_opt_enabled = 0
     override_auto_clock_and_prescale = 0
     frequency = ctypes.c_int16(frequency_hz)
-    #stop_frequency = None
-    #frequency_increment = None
-    #dwell_time = None
-    status['sigGenApply'] = ps.ps6000aSigGenApply(chandle,
-                                                  sig_gen_enabled,
-                                                  sweep_enabled,
-                                                  trigger_enabled,
-                                                  auto_clock_opt_enabled,
-                                                  override_auto_clock_and_prescale,
-                                                  ctypes.byref(frequency),
-                                                  None,
-                                                  None,
-                                                  None)
+    status['sigGenApply'] = ps.ps6000aSigGenApply(
+        chandle,
+        sig_gen_enabled,
+        sweep_enabled,
+        trigger_enabled,
+        auto_clock_opt_enabled,
+        override_auto_clock_and_prescale,
+        ctypes.byref(frequency),
+        None,  # stop_frequency
+        None,  # frequency_increment
+        None   # dwell_time
+    )
     assert_pico_ok(status['sigGenApply'])
 
 
-def read_channel_DC(status, chandle, resolution, source, **kwargs):
+def read_channel_streaming(status, chandle, resolution, source, **kwargs):
     '''
-    Method to read out a signal with a given source channel
+    Method to read out a signal with a given source channel using the straming functionality
     '''
 
-    n_pretrigger_samples = kwargs.get('n_pretrigger_samples', 500000)
-    n_posttrigger_samples = kwargs.get('n_posttrigger_samples', 16000000)
-    trigger_thrs = kwargs.get('trigger_thrs', 1000)
+    n_pretrigger_samples = kwargs.get('n_pretrigger_samples', 10000)
+    n_posttrigger_samples = kwargs.get('n_posttrigger_samples', 90000)
+    trigger_thrs = kwargs.get('trigger_thrs', 100)
+    sample_interval = kwargs.get('sample_interval', 1)
+    time_units = kwargs.get('time_units', 'NS')
 
-    # delay = 0 s
-    # autoTriggerMicroSeconds = 1000000 us
-    direction = enums.PICO_THRESHOLD_DIRECTION['PICO_RISING']
-    status['setSimpleTrigger'] = ps.ps6000aSetSimpleTrigger(chandle, 1, source, trigger_thrs, direction, 0, 1000000)
+    # set simple trigger
+    direction = enums.PICO_THRESHOLD_DIRECTION['PICO_RISING_OR_FALLING']
+    status['setSimpleTrigger'] = ps.ps6000aSetSimpleTrigger(
+        chandle,
+        1,
+        source,
+        trigger_thrs,
+        direction,
+        0,  # delay = 0 s
+        1000000  # autoTriggerMicroSeconds
+    )
     assert_pico_ok(status['setSimpleTrigger'])
 
-    # Get fastest available timebase
-    # handle = chandle
-    enabledChannelFlags = enums.PICO_CHANNEL_FLAGS['PICO_CHANNEL_A_FLAGS']
-    timebase = ctypes.c_uint32(0)
-    timeInterval = ctypes.c_double(0)
-    status['getMinimumTimebaseStateless'] = ps.ps6000aGetMinimumTimebaseStateless(chandle, enabledChannelFlags,
-                                                                                  ctypes.byref(timebase),
-                                                                                  ctypes.byref(timeInterval),
-                                                                                  resolution)
-    print(f'\n\033[92mtimebase = {timebase.value}')
-    print(f'\033[92msample interval = {timeInterval.value} s\n')
+    # set number of samples to be collected
+    n_samples = n_pretrigger_samples + n_posttrigger_samples
 
-    # Set number of samples to be collected
+    # set data buffer
+    buffer = (ctypes.c_int16 * n_samples)()
+    data_type = enums.PICO_DATA_TYPE['PICO_INT16_T']
+    waveform = 0
+    downsample_ratio_mode = enums.PICO_RATIO_MODE['PICO_RATIO_MODE_RAW']
+    clear = enums.PICO_ACTION['PICO_CLEAR_ALL']
+    add = enums.PICO_ACTION['PICO_ADD']
+    action = clear|add
+    status['setDataBuffer'] = ps.ps6000aSetDataBuffer(
+        chandle,
+        source,
+        ctypes.byref(buffer),
+        n_samples,
+        data_type,
+        waveform,
+        downsample_ratio_mode,
+        action
+    )
+    assert_pico_ok(status['setDataBuffer'])
+
+    # run streaming capture
+    time_units_pico = enums.PICO_TIME_UNITS[f'PICO_{time_units}']
+    sample_interval_pico = ctypes.c_double(sample_interval)
+    auto_stop = 0
+    status['runStreaming'] = ps.ps6000aRunStreaming(
+        chandle,
+        ctypes.byref(sample_interval_pico),
+        time_units_pico,
+        n_pretrigger_samples,
+        n_posttrigger_samples,
+        auto_stop,
+        1,  # downSampleRatio
+        downsample_ratio_mode
+    )
+    assert_pico_ok(status['runStreaming'])
+
+    # get data from scope
+    data_type = enums.PICO_DATA_TYPE['PICO_INT16_T']
+    streaming_data_info = structs.PICO_STREAMING_DATA_INFO()
+    streaming_data_info.bufferIndex = 0
+    streaming_data_info.channel = source
+    streaming_data_info.mode = downsample_ratio_mode
+    streaming_data_info.noOfSamples = 0
+    streaming_data_info.overflow = 0
+    streaming_data_info.startIndex = 0
+    streaming_data_info.type = data_type
+
+    trigger_info = structs.PICO_STREAMING_DATA_TRIGGER_INFO()
+    trigger_info.triggerAt = 0
+    trigger_info.triggered = 0
+    trigger_info.autoStop = auto_stop
+
+    status['getStreamingLatestValues'] = ps.ps6000aGetStreamingLatestValues(
+        chandle,
+        ctypes.byref(streaming_data_info),
+        1,
+        ctypes.byref(trigger_info)
+    )
+    assert_pico_ok(status['getStreamingLatestValues'])
+
+    # get max ADC value
+    min_ADC = ctypes.c_int16()
+    max_ADC = ctypes.c_int16()
+    status['getAdcLimits'] = ps.ps6000aGetAdcLimits(
+        chandle,
+        resolution,
+        ctypes.byref(min_ADC),
+        ctypes.byref(max_ADC)
+    )
+    assert_pico_ok(status['getAdcLimits'])
+
+    # convert ADC counts data to mV
+    channel_range = 7
+    adc2mV_chmax = adc2mV(buffer, channel_range, max_ADC)
+
+    time_unit_mult_fact = 1.
+    if time_units == 'S':
+        time_unit_mult_fact = 1.e+9
+    elif time_units == 'MS':
+        time_unit_mult_fact = 1.e+6
+    elif time_units == 'US':
+        time_unit_mult_fact = 1.e+3
+    elif time_units == 'PS':
+        time_unit_mult_fact = 1.e-3
+    elif time_units == 'FS':
+        time_unit_mult_fact = 1.e-6
+
+    # create time data
+    time = np.linspace(0, n_samples * sample_interval * time_unit_mult_fact, n_samples)  # ns
+
+    return adc2mV_chmax, time
+
+
+def read_channel_runblock(status, chandle, resolution, source, **kwargs):
+    '''
+    Method to read out a signal with a given source channel using the runBlock functionality
+    '''
+
+    n_pretrigger_samples = kwargs.get('n_pretrigger_samples', 10000)
+    n_posttrigger_samples = kwargs.get('n_posttrigger_samples', 90000)
+    trigger_thrs = kwargs.get('trigger_thrs', 100)
+
+    # set simple trigger
+    direction = enums.PICO_THRESHOLD_DIRECTION['PICO_RISING_OR_FALLING']
+    status['setSimpleTrigger'] = ps.ps6000aSetSimpleTrigger(
+        chandle,
+        1,
+        source,
+        trigger_thrs,
+        direction,
+        0,  # delay = 0 s
+        1000000  # autoTriggerMicroSeconds
+    )
+    assert_pico_ok(status['setSimpleTrigger'])
+
+    # get fastest available timebase
+    enabled_channel_flags = enums.PICO_CHANNEL_FLAGS['PICO_CHANNEL_A_FLAGS']
+    timebase = ctypes.c_uint32(0)
+    time_interval = ctypes.c_double(0)
+    status['getMinimumTimebaseStateless'] = ps.ps6000aGetMinimumTimebaseStateless(
+        chandle,
+        enabled_channel_flags,
+        ctypes.byref(timebase),
+        ctypes.byref(time_interval),
+        resolution
+    )
+
+    # set number of samples to be collected
     n_samples = n_pretrigger_samples + n_posttrigger_samples
 
     # Create buffers
     buffer_max = (ctypes.c_int16 * n_samples)()
     buffer_min = (ctypes.c_int16 * n_samples)() # used for downsampling which isn't in the scope of this example
 
-    # Set data buffers
+    # set data buffers
     data_type = enums.PICO_DATA_TYPE['PICO_INT16_T']
     waveform = 0
-    downsample_mode = enums.PICO_RATIO_MODE['PICO_RATIO_MODE_RAW']
+    downsample_ratio_mode = enums.PICO_RATIO_MODE['PICO_RATIO_MODE_RAW']
     clear = enums.PICO_ACTION['PICO_CLEAR_ALL']
     add = enums.PICO_ACTION['PICO_ADD']
     action = clear|add
-    status['setDataBuffers'] = ps.ps6000aSetDataBuffers(chandle, source, ctypes.byref(buffer_max),
-                                                        ctypes.byref(buffer_min), n_samples, data_type,
-                                                        waveform, downsample_mode, action)
+    status['setDataBuffers'] = ps.ps6000aSetDataBuffers(
+        chandle,
+        source,
+        ctypes.byref(buffer_max),
+        ctypes.byref(buffer_min),
+        n_samples,
+        data_type,
+        waveform,
+        downsample_ratio_mode,
+        action
+    )
     assert_pico_ok(status['setDataBuffers'])
 
-    # Run block capture
+    # run block capture
     time_indisposed_ms = ctypes.c_double(0)
-    # segmentIndex = 0
-    # lpReady = None   Using IsReady rather than a callback
-    # pParameter = None
-    status['runBlock'] = ps.ps6000aRunBlock(chandle, n_pretrigger_samples, n_posttrigger_samples,
-                                            timebase, ctypes.byref(time_indisposed_ms), 0, None, None)
+    status['runBlock'] = ps.ps6000aRunBlock(
+        chandle,
+        n_pretrigger_samples,
+        n_posttrigger_samples,
+        timebase,
+        ctypes.byref(time_indisposed_ms),
+        0,  # segmentIndex
+        None,  # lpReady = None   Using IsReady rather than a callback
+        None  # pParameter
+    )
     assert_pico_ok(status['runBlock'])
 
-    # Check for data collection to finish using ps6000aIsReady
+    # check for data collection to finish using ps6000aIsReady
     ready = ctypes.c_int16(0)
     check = ctypes.c_int16(0)
     while ready.value == check.value:
         status['isReady'] = ps.ps6000aIsReady(chandle, ctypes.byref(ready))
 
-    # Get data from scope
-    # startIndex = 0
+    # get data from scope
     n_of_samples = ctypes.c_uint64(n_samples)
-    # downSampleRatio = 1
-    # segmentIndex = 0
     overflow = ctypes.c_int16(0)
-    status['getValues'] = ps.ps6000aGetValues(chandle, 0, ctypes.byref(n_of_samples), 1, downsample_mode, 0,
-                                              ctypes.byref(overflow))
+    status['getValues'] = ps.ps6000aGetValues(
+        chandle,
+        0,  # startIndex
+        ctypes.byref(n_of_samples),
+        1,  # downSampleRatio
+        downsample_ratio_mode,
+        0,  # segmentIndex
+        ctypes.byref(overflow)
+    )
     assert_pico_ok(status['getValues'])
 
     # get max ADC value
-    # handle = chandle
-    minADC = ctypes.c_int16()
-    maxADC = ctypes.c_int16()
-    status['getAdcLimits'] = ps.ps6000aGetAdcLimits(chandle, resolution, ctypes.byref(minADC), ctypes.byref(maxADC))
+    min_ADC = ctypes.c_int16()
+    max_ADC = ctypes.c_int16()
+    status['getAdcLimits'] = ps.ps6000aGetAdcLimits(
+        chandle,
+        resolution,
+        ctypes.byref(min_ADC),
+        ctypes.byref(max_ADC)
+    )
     assert_pico_ok(status['getAdcLimits'])
 
     # convert ADC counts data to mV
-    channelRange = 7
-    adc2mVChAMax = adc2mV(buffer_max, channelRange, maxADC)
+    channel_range = 7
+    adc2mV_chmax = adc2mV(buffer_max, channel_range, max_ADC)
 
-    # Create time data
-    time = np.linspace(0, (n_samples) * timeInterval.value * 1000000000, n_samples)
+    # create time data
+    time = np.linspace(0, (n_samples) * time_interval.value * 1.e+9, n_samples)
 
-    return adc2mVChAMax, time
+    return adc2mV_chmax, time
