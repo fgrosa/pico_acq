@@ -11,29 +11,51 @@ from picosdk.PicoDeviceEnums import picoEnum as enums
 from picosdk.PicoDeviceStructs import picoStruct as structs
 from picosdk.functions import adc2mV, assert_pico_ok
 
-def turnon_readout_channel_DC(status, chandle, channel_name='A'):
+# for some reasons there is no PICO_CONNECT_PROBE_RANGE in picoEnum
+channel_ranges = {
+    'PICO_10MV': 1,
+    'PICO_20MV': 2,
+    'PICO_50MV': 3,
+    'PICO_100MV': 4,
+    'PICO_200MV': 5,
+    'PICO_500MV': 6,
+    'PICO_1V': 7,
+    'PICO_2V': 8,
+    'PICO_5V': 9,
+    'PICO_10V': 10,
+    'PICO_20V': 11
+}
+
+def turnon_readout_channel_DC(status, chandle, channel_names=['A'], **kwargs):
     '''
     Method to turn on a channel for DC readout
     '''
 
+    # check if it is a single channel instead of a list
+    if not isinstance(channel_names, list):
+        channel_names = [channel_names]
+
+    range_V = kwargs.get('range_V', '50MV')
+
     # Set channel on
-    channel_on = enums.PICO_CHANNEL[f'PICO_CHANNEL_{channel_name}']
-    coupling = enums.PICO_COUPLING['PICO_DC']
-    channel_range = 7
-    bandwidth = enums.PICO_BANDWIDTH_LIMITER['PICO_BW_FULL']
-    status[f'setChannel{channel_name}'] = ps.ps6000aSetChannelOn(
-        chandle,
-        channel_on,
-        coupling,
-        channel_range,
-        0,  # analogueOffset = 0 V
-        bandwidth
-    )
-    assert_pico_ok(status[f'setChannel{channel_name}'])
+    for channel_name in channel_names:
+        channel_on = enums.PICO_CHANNEL[f'PICO_CHANNEL_{channel_name}']
+        coupling = enums.PICO_COUPLING['PICO_DC_50OHM']
+        channel_range = channel_ranges[f'PICO_{range_V}'] # FIXME
+        bandwidth = enums.PICO_BANDWIDTH_LIMITER['PICO_BW_FULL']
+        status[f'setChannel{channel_name}'] = ps.ps6000aSetChannelOn(
+            chandle,
+            channel_on,
+            coupling,
+            channel_range,
+            0,  # analogueOffset = 0 V
+            bandwidth
+        )
+        assert_pico_ok(status[f'setChannel{channel_name}'])
 
     # set other channels off
-    for ch in list(string.ascii_uppercase)[:channel_range+1]:
-        if ch != channel_name:
+    for ch in list(string.ascii_uppercase)[:8]:
+        if ch not in channel_names:
             channel = enums.PICO_CHANNEL[f'PICO_CHANNEL_{ch}']
             status['setChannel', channel] = ps.ps6000aSetChannelOff(chandle, channel)
             assert_pico_ok(status['setChannel', channel])
@@ -97,6 +119,25 @@ def generate_signal(status, chandle, func='PICO_SINE', **kwargs):
     assert_pico_ok(status['sigGenApply'])
 
 
+def set_trigger(status, chandle, source, trigger_thrs = -10, direction = 'RISING_OR_FALLING'):
+    '''
+    Method to setup a trigger
+    '''
+
+    # set simple trigger
+    pico_direction = enums.PICO_THRESHOLD_DIRECTION[f'PICO_{direction}']
+    status['setSimpleTrigger'] = ps.ps6000aSetSimpleTrigger(
+        chandle,
+        1,
+        source,
+        trigger_thrs,
+        pico_direction,
+        0,  # delay = 0 s
+        1000000  # autoTriggerMicroSeconds
+    )
+    assert_pico_ok(status['setSimpleTrigger'])
+
+
 def read_channel_streaming(status, chandle, resolution, source, **kwargs):
     '''
     Method to read out a signal with a given source channel using the straming functionality
@@ -104,22 +145,9 @@ def read_channel_streaming(status, chandle, resolution, source, **kwargs):
 
     n_pretrigger_samples = kwargs.get('n_pretrigger_samples', 10000)
     n_posttrigger_samples = kwargs.get('n_posttrigger_samples', 90000)
-    trigger_thrs = kwargs.get('trigger_thrs', 100)
     sample_interval = kwargs.get('sample_interval', 1)
     time_units = kwargs.get('time_units', 'NS')
-
-    # set simple trigger
-    direction = enums.PICO_THRESHOLD_DIRECTION['PICO_RISING_OR_FALLING']
-    status['setSimpleTrigger'] = ps.ps6000aSetSimpleTrigger(
-        chandle,
-        1,
-        source,
-        trigger_thrs,
-        direction,
-        0,  # delay = 0 s
-        1000000  # autoTriggerMicroSeconds
-    )
-    assert_pico_ok(status['setSimpleTrigger'])
+    range_V = kwargs.get('range_V', '50MV')
 
     # set number of samples to be collected
     n_samples = n_pretrigger_samples + n_posttrigger_samples
@@ -196,7 +224,7 @@ def read_channel_streaming(status, chandle, resolution, source, **kwargs):
     assert_pico_ok(status['getAdcLimits'])
 
     # convert ADC counts data to mV
-    channel_range = 7
+    channel_range = channel_ranges[f'PICO_{range_V}'] # FIXME
     adc2mV_chmax = adc2mV(buffer, channel_range, max_ADC)
 
     time_unit_mult_fact = 1.
@@ -217,30 +245,17 @@ def read_channel_streaming(status, chandle, resolution, source, **kwargs):
     return adc2mV_chmax, time
 
 
-def read_channel_runblock(status, chandle, resolution, source, **kwargs):
+def read_channel_runblock(status, chandle, resolution, source, channel_name='A', **kwargs):
     '''
     Method to read out a signal with a given source channel using the runBlock functionality
     '''
 
     n_pretrigger_samples = kwargs.get('n_pretrigger_samples', 10000)
     n_posttrigger_samples = kwargs.get('n_posttrigger_samples', 90000)
-    trigger_thrs = kwargs.get('trigger_thrs', 100)
-
-    # set simple trigger
-    direction = enums.PICO_THRESHOLD_DIRECTION['PICO_RISING_OR_FALLING']
-    status['setSimpleTrigger'] = ps.ps6000aSetSimpleTrigger(
-        chandle,
-        1,
-        source,
-        trigger_thrs,
-        direction,
-        0,  # delay = 0 s
-        1000000  # autoTriggerMicroSeconds
-    )
-    assert_pico_ok(status['setSimpleTrigger'])
+    range_V = kwargs.get('range_V', '50MV')
 
     # get fastest available timebase
-    enabled_channel_flags = enums.PICO_CHANNEL_FLAGS['PICO_CHANNEL_A_FLAGS']
+    enabled_channel_flags = enums.PICO_CHANNEL_FLAGS[f'PICO_CHANNEL_{channel_name}_FLAGS']
     timebase = ctypes.c_uint32(0)
     time_interval = ctypes.c_double(0)
     status['getMinimumTimebaseStateless'] = ps.ps6000aGetMinimumTimebaseStateless(
@@ -324,7 +339,7 @@ def read_channel_runblock(status, chandle, resolution, source, **kwargs):
     assert_pico_ok(status['getAdcLimits'])
 
     # convert ADC counts data to mV
-    channel_range = 7
+    channel_range = channel_ranges[f'PICO_{range_V}'] # FIXME
     adc2mV_chmax = adc2mV(buffer_max, channel_range, max_ADC)
 
     # create time data
