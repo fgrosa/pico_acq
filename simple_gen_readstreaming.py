@@ -14,6 +14,7 @@ from picosdk.functions import assert_pico_ok
 from utils import (
     turnon_readout_channel_DC,
     generate_signal,
+    set_trigger,
     read_channel_streaming
 )
 
@@ -43,7 +44,8 @@ assert_pico_ok(status['openunit'])
 readout_channel = turnon_readout_channel_DC(
     status,
     chandle,
-    args.channel
+    args.channel,
+    range_V = '1V'
 )
 
 # generate a function using AWG
@@ -56,6 +58,15 @@ generate_signal(
     frequency_hz=args.freq
 )
 
+# set a trigger
+set_trigger(
+    status,
+    chandle,
+    readout_channel,
+    -100,
+    'RISING_OR_FALLING'
+)
+
 # read out signal from channel
 sig, time = read_channel_streaming(
     status,
@@ -63,7 +74,8 @@ sig, time = read_channel_streaming(
     resolution,
     readout_channel,
     sample_interval=1,
-    time_units='NS'
+    time_units='NS',
+    range_V = '1V'
 )
 
 # Close the scope
