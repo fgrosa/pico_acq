@@ -37,15 +37,16 @@ def turnon_readout_channel_DC(status, chandle, channel_names=['A'], **kwargs):
 
     range_V = kwargs.get('range_V', '50MV')
 
-    # Set channel on
+    # Set channels on
+    channels_on = {}
     for channel_name in channel_names:
-        channel_on = enums.PICO_CHANNEL[f'PICO_CHANNEL_{channel_name}']
+        channels_on[channel_name] = enums.PICO_CHANNEL[f'PICO_CHANNEL_{channel_name}']
         coupling = enums.PICO_COUPLING['PICO_DC_50OHM']
         channel_range = channel_ranges[f'PICO_{range_V}'] # FIXME
         bandwidth = enums.PICO_BANDWIDTH_LIMITER['PICO_BW_FULL']
         status[f'setChannel{channel_name}'] = ps.ps6000aSetChannelOn(
             chandle,
-            channel_on,
+            channels_on[channel_name],
             coupling,
             channel_range,
             0,  # analogueOffset = 0 V
@@ -60,7 +61,7 @@ def turnon_readout_channel_DC(status, chandle, channel_names=['A'], **kwargs):
             status['setChannel', channel] = ps.ps6000aSetChannelOff(chandle, channel)
             assert_pico_ok(status['setChannel', channel])
 
-    return channel_on
+    return channels_on
 
 
 def generate_signal(status, chandle, func='PICO_SINE', **kwargs):
@@ -128,7 +129,7 @@ def set_trigger(status, chandle, source, trigger_thrs = -10, direction = 'RISING
     pico_direction = enums.PICO_THRESHOLD_DIRECTION[f'PICO_{direction}']
     status['setSimpleTrigger'] = ps.ps6000aSetSimpleTrigger(
         chandle,
-        1,
+        0,
         source,
         trigger_thrs,
         pico_direction,
@@ -138,9 +139,9 @@ def set_trigger(status, chandle, source, trigger_thrs = -10, direction = 'RISING
     assert_pico_ok(status['setSimpleTrigger'])
 
 
-def read_channel_streaming(status, chandle, resolution, source, **kwargs):
+def read_channel_streaming(status, chandle, resolution, sources, **kwargs):
     '''
-    Method to read out a signal with a given source channel using the straming functionality
+    Method to read out a signal with given source channels using the straming functionality
     '''
 
     n_pretrigger_samples = kwargs.get('n_pretrigger_samples', 10000)
@@ -153,24 +154,29 @@ def read_channel_streaming(status, chandle, resolution, source, **kwargs):
     n_samples = n_pretrigger_samples + n_posttrigger_samples
 
     # set data buffer
-    buffer = (ctypes.c_int16 * n_samples)()
-    data_type = enums.PICO_DATA_TYPE['PICO_INT16_T']
-    waveform = 0
-    downsample_ratio_mode = enums.PICO_RATIO_MODE['PICO_RATIO_MODE_RAW']
-    clear = enums.PICO_ACTION['PICO_CLEAR_ALL']
-    add = enums.PICO_ACTION['PICO_ADD']
-    action = clear|add
-    status['setDataBuffer'] = ps.ps6000aSetDataBuffer(
-        chandle,
-        source,
-        ctypes.byref(buffer),
-        n_samples,
-        data_type,
-        waveform,
-        downsample_ratio_mode,
-        action
-    )
-    assert_pico_ok(status['setDataBuffer'])
+    buffer = {}
+    for i_source, source in enumerate(sources.items()):
+        buffer[source[0]] = (ctypes.c_int16 * n_samples)()
+        data_type = enums.PICO_DATA_TYPE['PICO_INT16_T']
+        waveform = 0
+        downsample_ratio_mode = enums.PICO_RATIO_MODE['PICO_RATIO_MODE_RAW']
+        clear = enums.PICO_ACTION['PICO_CLEAR_ALL']
+        add = enums.PICO_ACTION['PICO_ADD']
+        if i_source == 0:
+            action = clear|add
+        else:
+            action = add
+        status['setDataBuffer'] = ps.ps6000aSetDataBuffer(
+            chandle,
+            source[1],
+            ctypes.byref(buffer[source[0]]),
+            n_samples,
+            data_type,
+            waveform,
+            downsample_ratio_mode,
+            action
+        )
+        assert_pico_ok(status['setDataBuffer'])
 
     # run streaming capture
     time_units_pico = enums.PICO_TIME_UNITS[f'PICO_{time_units}']
@@ -188,30 +194,6 @@ def read_channel_streaming(status, chandle, resolution, source, **kwargs):
     )
     assert_pico_ok(status['runStreaming'])
 
-    # get data from scope
-    data_type = enums.PICO_DATA_TYPE['PICO_INT16_T']
-    streaming_data_info = structs.PICO_STREAMING_DATA_INFO()
-    streaming_data_info.bufferIndex = 0
-    streaming_data_info.channel = source
-    streaming_data_info.mode = downsample_ratio_mode
-    streaming_data_info.noOfSamples = 0
-    streaming_data_info.overflow = 0
-    streaming_data_info.startIndex = 0
-    streaming_data_info.type = data_type
-
-    trigger_info = structs.PICO_STREAMING_DATA_TRIGGER_INFO()
-    trigger_info.triggerAt = 0
-    trigger_info.triggered = 0
-    trigger_info.autoStop = auto_stop
-
-    status['getStreamingLatestValues'] = ps.ps6000aGetStreamingLatestValues(
-        chandle,
-        ctypes.byref(streaming_data_info),
-        1,
-        ctypes.byref(trigger_info)
-    )
-    assert_pico_ok(status['getStreamingLatestValues'])
-
     # get max ADC value
     min_ADC = ctypes.c_int16()
     max_ADC = ctypes.c_int16()
@@ -222,10 +204,6 @@ def read_channel_streaming(status, chandle, resolution, source, **kwargs):
         ctypes.byref(max_ADC)
     )
     assert_pico_ok(status['getAdcLimits'])
-
-    # convert ADC counts data to mV
-    channel_range = channel_ranges[f'PICO_{range_V}'] # FIXME
-    adc2mV_chmax = adc2mV(buffer, channel_range, max_ADC)
 
     time_unit_mult_fact = 1.
     if time_units == 'S':
@@ -241,6 +219,38 @@ def read_channel_streaming(status, chandle, resolution, source, **kwargs):
 
     # create time data
     time = np.linspace(0, n_samples * sample_interval * time_unit_mult_fact, n_samples)  # ns
+
+    # get data from scope
+    adc2mV_chmax = {}
+    channel_range = channel_ranges[f'PICO_{range_V}'] # FIXME
+    data_type = enums.PICO_DATA_TYPE['PICO_INT16_T']
+    streaming_data_info = []
+    streaming_data_info = (structs.PICO_STREAMING_DATA_INFO * len(sources))()
+    for i_source, source in enumerate(sources.items()):
+        streaming_data_info[i_source].bufferIndex = 0
+        streaming_data_info[i_source].channel = source[1]
+        streaming_data_info[i_source].mode = downsample_ratio_mode
+        streaming_data_info[i_source].noOfSamples = 0
+        streaming_data_info[i_source].overflow = 0
+        streaming_data_info[i_source].startIndex = 0
+        streaming_data_info[i_source].type = data_type
+
+    trigger_info = structs.PICO_STREAMING_DATA_TRIGGER_INFO()
+    trigger_info.triggerAt = 0
+    trigger_info.triggered = 0
+    trigger_info.autoStop = auto_stop
+
+    status['getStreamingLatestValues'] = ps.ps6000aGetStreamingLatestValues(
+        chandle,
+        ctypes.byref(streaming_data_info),
+        len(sources),
+        ctypes.byref(trigger_info)
+    )
+    assert_pico_ok(status['getStreamingLatestValues'])
+
+    # convert ADC counts data to mV
+    for source in sources:
+        adc2mV_chmax[source] = adc2mV(buffer[source], channel_range, max_ADC)
 
     return adc2mV_chmax, time
 
