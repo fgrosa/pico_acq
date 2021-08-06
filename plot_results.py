@@ -51,4 +51,5 @@ plt.xlabel('time (ns)')
 plt.ylabel('voltage (mV)')
 plt.savefig(outfile)
 plt.close()
+
 plt.show()
