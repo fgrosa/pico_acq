@@ -144,11 +144,11 @@ def read_channel_streaming(status, chandle, resolution, sources, **kwargs):
     Method to read out a signal with given source channels using the straming functionality
     '''
 
-    n_pretrigger_samples = kwargs.get('n_pretrigger_samples', 10000)
-    n_posttrigger_samples = kwargs.get('n_posttrigger_samples', 90000)
+    n_pretrigger_samples = kwargs.get('n_pretrigger_samples', 1000)
+    n_posttrigger_samples = kwargs.get('n_posttrigger_samples', 9000)
     sample_interval = kwargs.get('sample_interval', 1)
     time_units = kwargs.get('time_units', 'NS')
-    range_V = kwargs.get('range_V', '50MV')
+    range_V = kwargs.get('range_V', '10MV')
 
     # set number of samples to be collected
     n_samples = n_pretrigger_samples + n_posttrigger_samples
@@ -181,7 +181,7 @@ def read_channel_streaming(status, chandle, resolution, sources, **kwargs):
     # run streaming capture
     time_units_pico = enums.PICO_TIME_UNITS[f'PICO_{time_units}']
     sample_interval_pico = ctypes.c_double(sample_interval)
-    auto_stop = 0
+    auto_stop = 1 # stop once buffer is full
     status['runStreaming'] = ps.ps6000aRunStreaming(
         chandle,
         ctypes.byref(sample_interval_pico),
@@ -246,8 +246,8 @@ def read_channel_streaming(status, chandle, resolution, sources, **kwargs):
         len(sources),
         ctypes.byref(trigger_info)
     )
-    assert_pico_ok(status['getStreamingLatestValues'])
-
+    assert_pico_ok(status['getStreamingLatestValues'])    
+    
     # convert ADC counts data to mV
     for source in sources:
         adc2mV_chmax[source] = adc2mV(buffer[source], channel_range, max_ADC)
@@ -302,7 +302,7 @@ def read_channel_runblock(status, chandle, resolution, source, channel_name='A',
         action
     )
     assert_pico_ok(status['setDataBuffers'])
-
+    
     # run block capture
     time_indisposed_ms = ctypes.c_double(0)
     status['runBlock'] = ps.ps6000aRunBlock(
