@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 from picosdk.functions import assert_pico_ok
 
 from utils import (
-    read_channel_runblock,
     turnon_readout_channel_DC,
     set_trigger,
     read_channel_streaming,
@@ -73,7 +72,6 @@ if args.runmode == 'runStreaming':
         readout_channel,
         n_pretrigger_samples=args.npretrigger,
         n_posttrigger_samples=args.nposttrigger,
-        trigger_thrs=args.triggerthrs,
         sample_interval=args.sampleinterval,
         time_units='NS',
         range_V = '50MV'
@@ -87,7 +85,6 @@ elif args.runmode == 'runBlock':
         args.channel,
         n_pretrigger_samples=args.npretrigger,
         n_posttrigger_samples=args.nposttrigger,
-        trigger_thrs=args.triggerthrs,
         range_V = '50MV'
     )
 

@@ -7,3 +7,5 @@ range:
     Vmax: 200.  # mV
     tmin: null  # ns
     tmax: null  # ns
+
+outfile: spad_32V_ns.pdf
