@@ -58,8 +58,8 @@ readout_channel = turnon_readout_channel_DC(
 set_trigger(
     status,
     chandle,
-    readout_channel,
-    -8.,
+    readout_channel[args.channel],
+    -8,
     'FALLING'
 )
 
@@ -69,7 +69,7 @@ if args.runmode == 'runStreaming':
         status,
         chandle,
         resolution,
-        readout_channel,
+        readout_channel[args.channel],
         n_pretrigger_samples=args.npretrigger,
         n_posttrigger_samples=args.nposttrigger,
         sample_interval=args.sampleinterval,
@@ -81,7 +81,7 @@ elif args.runmode == 'runBlock':
         status, 
         chandle,
         resolution,
-        readout_channel,
+        readout_channel[args.channel],
         args.channel,
         n_pretrigger_samples=args.npretrigger,
         n_posttrigger_samples=args.nposttrigger,
