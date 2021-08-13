@@ -51,7 +51,7 @@ readout_channel = turnon_readout_channel_DC(
     status,
     chandle,
     args.channel,
-    range_V = '50MV'
+    range_V = '10MV'
 )
 
 # set a trigger
@@ -59,8 +59,10 @@ set_trigger(
     status,
     chandle,
     readout_channel[args.channel],
-    -8,
-    'FALLING'
+    trigger_thrs_mV = -2,
+    resolution = resolution,
+    range_V = '10MV',
+    direction = 'FALLING'
 )
 
 # read out signal from channel
@@ -74,7 +76,7 @@ if args.runmode == 'runStreaming':
         n_posttrigger_samples=args.nposttrigger,
         sample_interval=args.sampleinterval,
         time_units='NS',
-        range_V = '50MV'
+        range_V = '10MV'
     )
 elif args.runmode == 'runBlock':
     sig, time = read_channel_runblock(
@@ -85,7 +87,7 @@ elif args.runmode == 'runBlock':
         args.channel,
         n_pretrigger_samples=args.npretrigger,
         n_posttrigger_samples=args.nposttrigger,
-        range_V = '50MV'
+        range_V = '10MV'
     )
 
 # Close the scope
