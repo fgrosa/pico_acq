@@ -7,6 +7,7 @@ from .utils import (
     turnon_readout_channel_DC,
     set_trigger,
     read_channel_streaming,
+    read_channel_runblock,
 )
 
 class PS6000a:
@@ -35,28 +36,44 @@ class PS6000a:
             range_V = '10MV'
         )
 
-    def set_dummy_trigger(self, channel = "A"):
+    def set_trigger(self, threshold_mV, direction, channel = "A"):
         
         set_trigger(
             self.status,
             self.chandle,
             self.readout_channels[channel],
-            -2000,
-            'FALLING'
+            trigger_thrs_mV = threshold_mV,
+            resolution = self.resolution,
+            range_V = '10MV',
+            direction = direction
         )
 
-    def acquire(self):
+    def acquire(self, channel_name, n_pretrigger_samples, n_posttrigger_samples, mode = 'runStreaming'):
         
-        sig, time = read_channel_streaming(
-            self.status,
-            self.chandle,
-            self.resolution,
-            self.readout_channels,
-            n_pretrigger_samples=10000, # not triggering
-            n_posttrigger_samples=10000, # not triggering
-            sample_interval=2,
-            time_units='NS',
-            range_V = '50MV'
-        )
+        if mode == 'runStreaming':
+            sig, time = read_channel_streaming(
+                self.status,
+                self.chandle,
+                self.resolution,
+                self.readout_channels,
+                n_pretrigger_samples=n_pretrigger_samples,
+                n_posttrigger_samples=n_posttrigger_samples,
+                sample_interval=2,
+                time_units='NS',
+                range_V = '10MV'
+            )
+        elif mode == 'runBlock':
+            sig, time = read_channel_runblock(
+                self.status, 
+                self.chandle,
+                self.resolution,
+                self.readout_channels[channel_name],
+                channel_name,
+                n_pretrigger_samples=n_pretrigger_samples,
+                n_posttrigger_samples=n_posttrigger_samples,
+                range_V = '10MV'
+            )
+        else:
+            raise NotImplementedError(f'Mode {mode} unknown!')
 
         return sig, time

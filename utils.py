@@ -9,7 +9,7 @@ import numpy as np
 from picosdk.ps6000a import ps6000a as ps
 from picosdk.PicoDeviceEnums import picoEnum as enums
 from picosdk.PicoDeviceStructs import picoStruct as structs
-from picosdk.functions import adc2mV, assert_pico_ok
+from picosdk.functions import adc2mV, mV2adc, assert_pico_ok
 
 # for some reasons there is no PICO_CONNECT_PROBE_RANGE in picoEnum
 channel_ranges = {
@@ -120,18 +120,31 @@ def generate_signal(status, chandle, func='PICO_SINE', **kwargs):
     assert_pico_ok(status['sigGenApply'])
 
 
-def set_trigger(status, chandle, source, trigger_thrs = -10, direction = 'RISING_OR_FALLING'):
+def set_trigger(status, chandle, source, trigger_thrs_mV, resolution, range_V, direction = 'RISING_OR_FALLING', dummy = False):
     '''
     Method to setup a trigger
     '''
+
+    channel_range = channel_ranges[f'PICO_{range_V}']
+    
+    # get max ADC value
+    min_ADC = ctypes.c_int16()
+    max_ADC = ctypes.c_int16()
+    status['getAdcLimits'] = ps.ps6000aGetAdcLimits(
+        chandle,
+        resolution,
+        ctypes.byref(min_ADC),
+        ctypes.byref(max_ADC)
+    )
+    assert_pico_ok(status['getAdcLimits'])
 
     # set simple trigger
     pico_direction = enums.PICO_THRESHOLD_DIRECTION[f'PICO_{direction}']
     status['setSimpleTrigger'] = ps.ps6000aSetSimpleTrigger(
         chandle,
-        0,
+        0 if dummy else 1,
         source,
-        trigger_thrs,
+        mV2adc(trigger_thrs_mV, channel_range, max_ADC),
         pico_direction,
         0,  # delay = 0 s
         1000000  # autoTriggerMicroSeconds
