@@ -275,8 +275,27 @@ def read_channel_streaming(status, handle, resolution, sources, **kwargs):
 
     return adc2mV_chmax, time
 
+def sample_interval_ns2timebase(sample_interval_ns):
+    if sample_interval_ns < 3.2:
+        const = 5
+        timebase = int(np.log2(sample_interval_ns * const))
+    else:
+        const = 156.25e-3
+        timebase = int(sample_interval_ns * const + 4)
 
-def read_channel_runblock(status, handle, resolution, sources, source_ranges, **kwargs):
+    return timebase
+
+def timebase2sample_interval_ns(timebase):
+    if timebase < 5:
+        const = 5
+        sample_interval_ns = np.power(2, timebase) / const
+    else:
+        const = 156.25e-3
+        sample_interval_ns = (timebase - 4) / const
+
+    return sample_interval_ns
+
+def read_channel_runblock(status, handle, resolution, sources, source_ranges, sample_interval_ns, **kwargs):
     '''
     Method to read out a signal with a given source channel using the runBlock functionality
     '''
@@ -284,19 +303,27 @@ def read_channel_runblock(status, handle, resolution, sources, source_ranges, **
     n_pretrigger_samples = kwargs.get('n_pretrigger_samples', 10000)
     n_posttrigger_samples = kwargs.get('n_posttrigger_samples', 90000)
 
-    timebase = ctypes.c_uint32(2)
-    time_interval = ctypes.c_double(800e-12)
+    if sample_interval_ns < 0:
+        timebase = ctypes.c_uint32(0)
+        sample_interval_s = ctypes.c_double(0)
 
-    # get fastest available timebase
-    # enabled_channel_flags = enums.PICO_CHANNEL_FLAGS[f'PICO_CHANNEL_{channel_name}_FLAGS']
-    # status['getMinimumTimebaseStateless'] = ps.ps6000aGetMinimumTimebaseStateless(
-    #     handle,
-    #     enabled_channel_flags,
-    #     ctypes.byref(timebase),
-    #     ctypes.byref(time_interval),
-    #     resolution
-    # )
-
+        # use the fastest available timebase
+        enabled_channel_flags = sum([enums.PICO_CHANNEL_FLAGS[f'PICO_CHANNEL_{channel_name}_FLAGS'] for channel_name in sources.keys()])
+        status['getMinimumTimebaseStateless'] = ps.ps6000aGetMinimumTimebaseStateless(
+            handle,
+            enabled_channel_flags,
+            ctypes.byref(timebase),
+            ctypes.byref(sample_interval_s),
+            resolution
+        )
+        
+        timebase = timebase.value
+        sample_interval_ns = sample_interval_s.value * 1e9
+    else:
+        # pick the timebase that's closest to the demanded value
+        timebase = sample_interval_ns2timebase(sample_interval_ns)
+        sample_interval_ns = timebase2sample_interval_ns(timebase)
+        
     # set number of samples to be collected
     n_samples = n_pretrigger_samples + n_posttrigger_samples
 
@@ -383,6 +410,6 @@ def read_channel_runblock(status, handle, resolution, sources, source_ranges, **
         waveform_mV[source_name] = adc2mV(buffer_max[source_name], cur_channel_range, max_ADC)
 
     # create time data
-    time = np.linspace(0, (n_samples) * time_interval.value * 1.e+9, n_samples)
+    time = np.linspace(0, (n_samples - 1) * sample_interval_ns, n_samples)
 
     return waveform_mV, time
