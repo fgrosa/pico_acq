@@ -27,14 +27,22 @@ class PS6000a:
     def __del__(self):
         self.status['stop'] = ps.ps6000aStop(self.handle)
         
-    def activate_channels(self, channels_on):
+    # coupling = enums.PICO_COUPLING['PICO_DC_50OHM']
+    # range_V = 'PICO_10MV'
+
+    def activate_channels(self, channels_on, channel_ranges, channel_couplings):
 
         self.readout_channels = turnon_readout_channel_DC(
             self.status,
             self.handle,
             channels_on,
-            range_V = '10MV'
+            channel_ranges,
+            channel_couplings
         )
+
+        # keep track of the channel settings
+        self.channel_ranges = {channel_name: channel_range for channel_name, channel_range in zip(channels_on, channel_ranges)}
+        self.channel_couplings = {channel_name: channel_coupling for channel_name, channel_coupling in zip(channels_on, channel_couplings)}
 
         return self.readout_channels
         
@@ -46,11 +54,11 @@ class PS6000a:
             self.readout_channels[channel],
             trigger_thrs_mV = threshold_mV,
             resolution = self.resolution,
-            range_V = '10MV',
+            channel_range = self.channel_ranges[channel],
             direction = direction
         )
 
-    def acquire(self, channel_name, n_pretrigger_samples, n_posttrigger_samples, mode = 'runStreaming'):
+    def acquire(self, n_pretrigger_samples, n_posttrigger_samples, mode = 'runStreaming'):
         
         if mode == 'runStreaming':
             sig, time = read_channel_streaming(
@@ -69,11 +77,10 @@ class PS6000a:
                 self.status, 
                 self.handle,
                 self.resolution,
-                self.readout_channels,
-                channel_name,
+                sources = self.readout_channels,
+                source_ranges = self.channel_ranges,
                 n_pretrigger_samples=n_pretrigger_samples,
-                n_posttrigger_samples=n_posttrigger_samples,
-                range_V = '10MV'
+                n_posttrigger_samples=n_posttrigger_samples
             )
         else:
             raise NotImplementedError(f'Mode {mode} unknown!')
