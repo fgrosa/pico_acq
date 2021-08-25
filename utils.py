@@ -12,7 +12,7 @@ from picosdk.PicoDeviceStructs import picoStruct as structs
 from picosdk.functions import adc2mV, mV2adc, assert_pico_ok
 
 # for some reasons there is no PICO_CONNECT_PROBE_RANGE in picoEnum
-channel_ranges = {
+PICO_CONNECT_PROBE_RANGE = {
     'PICO_10MV': 1,
     'PICO_20MV': 2,
     'PICO_50MV': 3,
@@ -26,7 +26,7 @@ channel_ranges = {
     'PICO_20V': 11
 }
 
-def turnon_readout_channel_DC(status, handle, channel_names=['A'], **kwargs):
+def turnon_readout_channel_DC(status, handle, channel_names, channel_ranges, channel_couplings, **kwargs):
     '''
     Method to turn on a channel for DC readout
     '''
@@ -35,14 +35,12 @@ def turnon_readout_channel_DC(status, handle, channel_names=['A'], **kwargs):
     if not isinstance(channel_names, list):
         channel_names = [channel_names]
 
-    range_V = kwargs.get('range_V', '50MV')
-
     # Set channels on
     channels_on = {}
-    for channel_name in channel_names:
+    for channel_name, channel_range, channel_coupling in zip(channel_names, channel_ranges, channel_couplings):
         channels_on[channel_name] = enums.PICO_CHANNEL[f'PICO_CHANNEL_{channel_name}']
-        coupling = enums.PICO_COUPLING['PICO_DC_50OHM']
-        channel_range = channel_ranges[f'PICO_{range_V}'] # FIXME
+        coupling = enums.PICO_COUPLING[channel_coupling]
+        channel_range = PICO_CONNECT_PROBE_RANGE[channel_range]
         bandwidth = enums.PICO_BANDWIDTH_LIMITER['PICO_BW_FULL']
         status[f'setChannel{channel_name}'] = ps.ps6000aSetChannelOn(
             handle,
@@ -98,10 +96,20 @@ def generate_signal(status, handle, func='PICO_SINE', **kwargs):
     status['sigGenFreq'] = ps.ps6000aSigGenFrequency(handle, frequency_hz)
     assert_pico_ok(status['sigGenFreq'])
 
+    # Set signal generator trigger event
+    status['sigGenTrigger'] = ps.ps6000aSigGenTrigger(
+        handle,
+        enums.PICO_SIGGEN_TRIG_TYPE['PICO_SIGGEN_RISING'],
+        enums.PICO_SIGGEN_TRIG_SOURCE['PICO_SIGGEN_SCOPE_TRIG'],
+        1, # only play a single cycle
+        0 # no auto-trigger
+    )
+    assert_pico_ok(status['sigGenTrigger'])
+    
     # Apply signal generator settings
     sig_gen_enabled = 1
     sweep_enabled = 0
-    trigger_enabled = 0
+    trigger_enabled = 1
     auto_clock_opt_enabled = 0
     override_auto_clock_and_prescale = 0
     frequency = ctypes.c_int16(frequency_hz)
@@ -120,12 +128,10 @@ def generate_signal(status, handle, func='PICO_SINE', **kwargs):
     assert_pico_ok(status['sigGenApply'])
 
 
-def set_trigger(status, handle, source, trigger_thrs_mV, resolution, range_V, direction = 'RISING_OR_FALLING', dummy = False):
+def set_trigger(status, handle, source, trigger_thrs_mV, resolution, channel_range, direction = 'RISING_OR_FALLING', dummy = False):
     '''
     Method to setup a trigger
     '''
-
-    channel_range = channel_ranges[f'PICO_{range_V}']
     
     # get max ADC value
     min_ADC = ctypes.c_int16()
@@ -139,12 +145,14 @@ def set_trigger(status, handle, source, trigger_thrs_mV, resolution, range_V, di
     assert_pico_ok(status['getAdcLimits'])
 
     # set simple trigger
-    pico_direction = enums.PICO_THRESHOLD_DIRECTION[f'PICO_{direction}']
+    pico_direction = enums.PICO_THRESHOLD_DIRECTION[direction]
+    pico_channel_range = PICO_CONNECT_PROBE_RANGE[channel_range]
+
     status['setSimpleTrigger'] = ps.ps6000aSetSimpleTrigger(
         handle,
         0 if dummy else 1,
         source,
-        mV2adc(trigger_thrs_mV, channel_range, max_ADC),
+        mV2adc(trigger_thrs_mV, pico_channel_range, max_ADC),
         pico_direction,
         0,  # delay = 0 s
         1000000  # autoTriggerMicroSeconds
@@ -235,7 +243,7 @@ def read_channel_streaming(status, handle, resolution, sources, **kwargs):
 
     # get data from scope
     adc2mV_chmax = {}
-    channel_range = channel_ranges[f'PICO_{range_V}'] # FIXME
+    channel_range = PICO_CONNECT_PROBE_RANGE[f'PICO_{range_V}'] # FIXME
     data_type = enums.PICO_DATA_TYPE['PICO_INT16_T']
     streaming_data_info = []
     streaming_data_info = (structs.PICO_STREAMING_DATA_INFO * len(sources))()
@@ -268,19 +276,19 @@ def read_channel_streaming(status, handle, resolution, sources, **kwargs):
     return adc2mV_chmax, time
 
 
-def read_channel_runblock(status, handle, resolution, sources, channel_name='A', **kwargs):
+def read_channel_runblock(status, handle, resolution, sources, source_ranges, **kwargs):
     '''
     Method to read out a signal with a given source channel using the runBlock functionality
     '''
 
     n_pretrigger_samples = kwargs.get('n_pretrigger_samples', 10000)
     n_posttrigger_samples = kwargs.get('n_posttrigger_samples', 90000)
-    range_V = kwargs.get('range_V', '50MV')
 
-    # get fastest available timebase
-    enabled_channel_flags = enums.PICO_CHANNEL_FLAGS[f'PICO_CHANNEL_{channel_name}_FLAGS']
     timebase = ctypes.c_uint32(2)
     time_interval = ctypes.c_double(800e-12)
+
+    # get fastest available timebase
+    # enabled_channel_flags = enums.PICO_CHANNEL_FLAGS[f'PICO_CHANNEL_{channel_name}_FLAGS']
     # status['getMinimumTimebaseStateless'] = ps.ps6000aGetMinimumTimebaseStateless(
     #     handle,
     #     enabled_channel_flags,
@@ -296,11 +304,8 @@ def read_channel_runblock(status, handle, resolution, sources, channel_name='A',
     buffer_min = {}
     buffer_max = {}
 
-    for ind, source in enumerate(sources.items()):
+    for ind, (source_name, source_handle) in enumerate(sources.items()):
     
-        source_name = source[0]
-        source_handle = source[1]
-
         buffer_max[source_name] = (ctypes.c_int16 * n_samples)()
         buffer_min[source_name] = (ctypes.c_int16 * n_samples)() # used for downsampling which isn't in the scope of this example
 
@@ -370,10 +375,14 @@ def read_channel_runblock(status, handle, resolution, sources, channel_name='A',
     assert_pico_ok(status['getAdcLimits'])
 
     # convert ADC counts data to mV
-    channel_range = channel_ranges[f'PICO_{range_V}']
-    adc2mV_chmax = {channel_name: adc2mV(channel_buffer, channel_range, max_ADC) for channel_name, channel_buffer in buffer_max.items()}
+    waveform_mV = {}
+
+    for source_name in sources.keys():
+        cur_source_range = source_ranges[source_name]
+        cur_channel_range = PICO_CONNECT_PROBE_RANGE[cur_source_range]
+        waveform_mV[source_name] = adc2mV(buffer_max[source_name], cur_channel_range, max_ADC)
 
     # create time data
     time = np.linspace(0, (n_samples) * time_interval.value * 1.e+9, n_samples)
 
-    return adc2mV_chmax, time
+    return waveform_mV, time
