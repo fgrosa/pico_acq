@@ -26,7 +26,7 @@ channel_ranges = {
     'PICO_20V': 11
 }
 
-def turnon_readout_channel_DC(status, chandle, channel_names=['A'], **kwargs):
+def turnon_readout_channel_DC(status, handle, channel_names=['A'], **kwargs):
     '''
     Method to turn on a channel for DC readout
     '''
@@ -45,7 +45,7 @@ def turnon_readout_channel_DC(status, chandle, channel_names=['A'], **kwargs):
         channel_range = channel_ranges[f'PICO_{range_V}'] # FIXME
         bandwidth = enums.PICO_BANDWIDTH_LIMITER['PICO_BW_FULL']
         status[f'setChannel{channel_name}'] = ps.ps6000aSetChannelOn(
-            chandle,
+            handle,
             channels_on[channel_name],
             coupling,
             channel_range,
@@ -58,13 +58,13 @@ def turnon_readout_channel_DC(status, chandle, channel_names=['A'], **kwargs):
     for ch in list(string.ascii_uppercase)[:8]:
         if ch not in channel_names:
             channel = enums.PICO_CHANNEL[f'PICO_CHANNEL_{ch}']
-            status['setChannel', channel] = ps.ps6000aSetChannelOff(chandle, channel)
+            status['setChannel', channel] = ps.ps6000aSetChannelOff(handle, channel)
             assert_pico_ok(status['setChannel', channel])
 
     return channels_on
 
 
-def generate_signal(status, chandle, func='PICO_SINE', **kwargs):
+def generate_signal(status, handle, func='PICO_SINE', **kwargs):
     '''
     Method to generate a signal using the AWG
     '''
@@ -79,7 +79,7 @@ def generate_signal(status, chandle, func='PICO_SINE', **kwargs):
     wavetype = enums.PICO_WAVE_TYPE[func]
     buffer = (ctypes.c_int16 * buffer_length)()
     status['sigGenWaveform'] = ps.ps6000aSigGenWaveform(
-        chandle,
+        handle,
         wavetype,
         ctypes.byref(buffer),
         buffer_length
@@ -87,15 +87,15 @@ def generate_signal(status, chandle, func='PICO_SINE', **kwargs):
     assert_pico_ok(status['sigGenWaveform'])
 
     # Set signal generator range
-    status['sigGenRange'] = ps.ps6000aSigGenRange(chandle, peak_to_peak_volts, offset_volts)
+    status['sigGenRange'] = ps.ps6000aSigGenRange(handle, peak_to_peak_volts, offset_volts)
     assert_pico_ok(status['sigGenRange'])
 
     # Set signal generator duty cycle
-    status['sigGenDutyCycle'] = ps.ps6000aSigGenWaveformDutyCycle(chandle, duty_cycle_percent)
+    status['sigGenDutyCycle'] = ps.ps6000aSigGenWaveformDutyCycle(handle, duty_cycle_percent)
     assert_pico_ok(status['sigGenDutyCycle'])
 
     # Set signal generator frequency
-    status['sigGenFreq'] = ps.ps6000aSigGenFrequency(chandle, frequency_hz)
+    status['sigGenFreq'] = ps.ps6000aSigGenFrequency(handle, frequency_hz)
     assert_pico_ok(status['sigGenFreq'])
 
     # Apply signal generator settings
@@ -106,7 +106,7 @@ def generate_signal(status, chandle, func='PICO_SINE', **kwargs):
     override_auto_clock_and_prescale = 0
     frequency = ctypes.c_int16(frequency_hz)
     status['sigGenApply'] = ps.ps6000aSigGenApply(
-        chandle,
+        handle,
         sig_gen_enabled,
         sweep_enabled,
         trigger_enabled,
@@ -120,7 +120,7 @@ def generate_signal(status, chandle, func='PICO_SINE', **kwargs):
     assert_pico_ok(status['sigGenApply'])
 
 
-def set_trigger(status, chandle, source, trigger_thrs_mV, resolution, range_V, direction = 'RISING_OR_FALLING', dummy = False):
+def set_trigger(status, handle, source, trigger_thrs_mV, resolution, range_V, direction = 'RISING_OR_FALLING', dummy = False):
     '''
     Method to setup a trigger
     '''
@@ -131,7 +131,7 @@ def set_trigger(status, chandle, source, trigger_thrs_mV, resolution, range_V, d
     min_ADC = ctypes.c_int16()
     max_ADC = ctypes.c_int16()
     status['getAdcLimits'] = ps.ps6000aGetAdcLimits(
-        chandle,
+        handle,
         resolution,
         ctypes.byref(min_ADC),
         ctypes.byref(max_ADC)
@@ -141,7 +141,7 @@ def set_trigger(status, chandle, source, trigger_thrs_mV, resolution, range_V, d
     # set simple trigger
     pico_direction = enums.PICO_THRESHOLD_DIRECTION[f'PICO_{direction}']
     status['setSimpleTrigger'] = ps.ps6000aSetSimpleTrigger(
-        chandle,
+        handle,
         0 if dummy else 1,
         source,
         mV2adc(trigger_thrs_mV, channel_range, max_ADC),
@@ -152,7 +152,7 @@ def set_trigger(status, chandle, source, trigger_thrs_mV, resolution, range_V, d
     assert_pico_ok(status['setSimpleTrigger'])
 
 
-def read_channel_streaming(status, chandle, resolution, sources, **kwargs):
+def read_channel_streaming(status, handle, resolution, sources, **kwargs):
     '''
     Method to read out a signal with given source channels using the straming functionality
     '''
@@ -180,7 +180,7 @@ def read_channel_streaming(status, chandle, resolution, sources, **kwargs):
         else:
             action = add
         status['setDataBuffer'] = ps.ps6000aSetDataBuffer(
-            chandle,
+            handle,
             source[1],
             ctypes.byref(buffer[source[0]]),
             n_samples,
@@ -196,7 +196,7 @@ def read_channel_streaming(status, chandle, resolution, sources, **kwargs):
     sample_interval_pico = ctypes.c_double(sample_interval)
     auto_stop = 1 # stop once buffer is full
     status['runStreaming'] = ps.ps6000aRunStreaming(
-        chandle,
+        handle,
         ctypes.byref(sample_interval_pico),
         time_units_pico,
         n_pretrigger_samples,
@@ -211,7 +211,7 @@ def read_channel_streaming(status, chandle, resolution, sources, **kwargs):
     min_ADC = ctypes.c_int16()
     max_ADC = ctypes.c_int16()
     status['getAdcLimits'] = ps.ps6000aGetAdcLimits(
-        chandle,
+        handle,
         resolution,
         ctypes.byref(min_ADC),
         ctypes.byref(max_ADC)
@@ -254,7 +254,7 @@ def read_channel_streaming(status, chandle, resolution, sources, **kwargs):
     trigger_info.autoStop = auto_stop
 
     status['getStreamingLatestValues'] = ps.ps6000aGetStreamingLatestValues(
-        chandle,
+        handle,
         ctypes.byref(streaming_data_info),
         len(sources),
         ctypes.byref(trigger_info)
@@ -268,7 +268,7 @@ def read_channel_streaming(status, chandle, resolution, sources, **kwargs):
     return adc2mV_chmax, time
 
 
-def read_channel_runblock(status, chandle, resolution, source, channel_name='A', **kwargs):
+def read_channel_runblock(status, handle, resolution, source, channel_name='A', **kwargs):
     '''
     Method to read out a signal with a given source channel using the runBlock functionality
     '''
@@ -282,7 +282,7 @@ def read_channel_runblock(status, chandle, resolution, source, channel_name='A',
     timebase = ctypes.c_uint32(0)
     time_interval = ctypes.c_double(0)
     status['getMinimumTimebaseStateless'] = ps.ps6000aGetMinimumTimebaseStateless(
-        chandle,
+        handle,
         enabled_channel_flags,
         ctypes.byref(timebase),
         ctypes.byref(time_interval),
@@ -304,7 +304,7 @@ def read_channel_runblock(status, chandle, resolution, source, channel_name='A',
     add = enums.PICO_ACTION['PICO_ADD']
     action = clear|add
     status['setDataBuffers'] = ps.ps6000aSetDataBuffers(
-        chandle,
+        handle,
         source,
         ctypes.byref(buffer_max),
         ctypes.byref(buffer_min),
@@ -319,7 +319,7 @@ def read_channel_runblock(status, chandle, resolution, source, channel_name='A',
     # run block capture
     time_indisposed_ms = ctypes.c_double(0)
     status['runBlock'] = ps.ps6000aRunBlock(
-        chandle,
+        handle,
         n_pretrigger_samples,
         n_posttrigger_samples,
         timebase,
@@ -334,13 +334,13 @@ def read_channel_runblock(status, chandle, resolution, source, channel_name='A',
     ready = ctypes.c_int16(0)
     check = ctypes.c_int16(0)
     while ready.value == check.value:
-        status['isReady'] = ps.ps6000aIsReady(chandle, ctypes.byref(ready))
+        status['isReady'] = ps.ps6000aIsReady(handle, ctypes.byref(ready))
 
     # get data from scope
     n_of_samples = ctypes.c_uint64(n_samples)
     overflow = ctypes.c_int16(0)
     status['getValues'] = ps.ps6000aGetValues(
-        chandle,
+        handle,
         0,  # startIndex
         ctypes.byref(n_of_samples),
         1,  # downSampleRatio
@@ -354,7 +354,7 @@ def read_channel_runblock(status, chandle, resolution, source, channel_name='A',
     min_ADC = ctypes.c_int16()
     max_ADC = ctypes.c_int16()
     status['getAdcLimits'] = ps.ps6000aGetAdcLimits(
-        chandle,
+        handle,
         resolution,
         ctypes.byref(min_ADC),
         ctypes.byref(max_ADC)

@@ -14,24 +14,24 @@ class PS6000a:
 
     def __init__(self):
 
-        # Create chandle and status ready for use
-        self.chandle = ctypes.c_int16()
+        # Create handle and status ready for use
+        self.handle = ctypes.c_int16()
         self.status = {}
 
         # Open 6000 A series PicoScope
-        # returns handle to chandle for use in API functions
+        # returns handle to handle for use in API functions
         self.resolution = enums.PICO_DEVICE_RESOLUTION['PICO_DR_10BIT']
-        self.status['openunit'] = ps.ps6000aOpenUnit(ctypes.byref(self.chandle), None, self.resolution)
+        self.status['openunit'] = ps.ps6000aOpenUnit(ctypes.byref(self.handle), None, self.resolution)
         assert_pico_ok(self.status['openunit'])
 
     def __del__(self):
-        self.status['stop'] = ps.ps6000aStop(self.chandle)
+        self.status['stop'] = ps.ps6000aStop(self.handle)
         
     def activate_channels(self, channels_on):
 
         self.readout_channels = turnon_readout_channel_DC(
             self.status,
-            self.chandle,
+            self.handle,
             channels_on,
             range_V = '10MV'
         )
@@ -40,7 +40,7 @@ class PS6000a:
         
         set_trigger(
             self.status,
-            self.chandle,
+            self.handle,
             self.readout_channels[channel],
             trigger_thrs_mV = threshold_mV,
             resolution = self.resolution,
@@ -53,7 +53,7 @@ class PS6000a:
         if mode == 'runStreaming':
             sig, time = read_channel_streaming(
                 self.status,
-                self.chandle,
+                self.handle,
                 self.resolution,
                 self.readout_channels,
                 n_pretrigger_samples=n_pretrigger_samples,
@@ -65,7 +65,7 @@ class PS6000a:
         elif mode == 'runBlock':
             sig, time = read_channel_runblock(
                 self.status, 
-                self.chandle,
+                self.handle,
                 self.resolution,
                 self.readout_channels[channel_name],
                 channel_name,
