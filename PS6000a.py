@@ -58,7 +58,7 @@ class PS6000a:
             direction = direction
         )
 
-    def acquire(self, n_pretrigger_samples, n_posttrigger_samples, mode = 'runStreaming'):
+    def acquire(self, n_pretrigger_samples, n_posttrigger_samples, sample_interval_ns, mode = 'runBlock'):
         
         if mode == 'runStreaming':
             sig, time = read_channel_streaming(
@@ -79,6 +79,7 @@ class PS6000a:
                 self.resolution,
                 sources = self.readout_channels,
                 source_ranges = self.channel_ranges,
+                sample_interval_ns = sample_interval_ns,
                 n_pretrigger_samples=n_pretrigger_samples,
                 n_posttrigger_samples=n_posttrigger_samples
             )
