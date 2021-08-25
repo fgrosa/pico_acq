@@ -36,6 +36,8 @@ class PS6000a:
             range_V = '10MV'
         )
 
+        return self.readout_channels
+        
     def set_trigger(self, threshold_mV, direction, channel = "A"):
         
         set_trigger(
@@ -67,7 +69,7 @@ class PS6000a:
                 self.status, 
                 self.handle,
                 self.resolution,
-                self.readout_channels[channel_name],
+                self.readout_channels,
                 channel_name,
                 n_pretrigger_samples=n_pretrigger_samples,
                 n_posttrigger_samples=n_posttrigger_samples,

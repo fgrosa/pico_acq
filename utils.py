@@ -268,7 +268,7 @@ def read_channel_streaming(status, handle, resolution, sources, **kwargs):
     return adc2mV_chmax, time
 
 
-def read_channel_runblock(status, handle, resolution, source, channel_name='A', **kwargs):
+def read_channel_runblock(status, handle, resolution, sources, channel_name='A', **kwargs):
     '''
     Method to read out a signal with a given source channel using the runBlock functionality
     '''
@@ -279,42 +279,50 @@ def read_channel_runblock(status, handle, resolution, source, channel_name='A', 
 
     # get fastest available timebase
     enabled_channel_flags = enums.PICO_CHANNEL_FLAGS[f'PICO_CHANNEL_{channel_name}_FLAGS']
-    timebase = ctypes.c_uint32(0)
-    time_interval = ctypes.c_double(0)
-    status['getMinimumTimebaseStateless'] = ps.ps6000aGetMinimumTimebaseStateless(
-        handle,
-        enabled_channel_flags,
-        ctypes.byref(timebase),
-        ctypes.byref(time_interval),
-        resolution
-    )
+    timebase = ctypes.c_uint32(2)
+    time_interval = ctypes.c_double(800e-12)
+    # status['getMinimumTimebaseStateless'] = ps.ps6000aGetMinimumTimebaseStateless(
+    #     handle,
+    #     enabled_channel_flags,
+    #     ctypes.byref(timebase),
+    #     ctypes.byref(time_interval),
+    #     resolution
+    # )
 
     # set number of samples to be collected
     n_samples = n_pretrigger_samples + n_posttrigger_samples
 
     # Create buffers
-    buffer_max = (ctypes.c_int16 * n_samples)()
-    buffer_min = (ctypes.c_int16 * n_samples)() # used for downsampling which isn't in the scope of this example
+    buffer_min = {}
+    buffer_max = {}
 
-    # set data buffers
-    data_type = enums.PICO_DATA_TYPE['PICO_INT16_T']
-    waveform = 0
-    downsample_ratio_mode = enums.PICO_RATIO_MODE['PICO_RATIO_MODE_RAW']
-    clear = enums.PICO_ACTION['PICO_CLEAR_ALL']
-    add = enums.PICO_ACTION['PICO_ADD']
-    action = clear|add
-    status['setDataBuffers'] = ps.ps6000aSetDataBuffers(
-        handle,
-        source,
-        ctypes.byref(buffer_max),
-        ctypes.byref(buffer_min),
-        n_samples,
-        data_type,
-        waveform,
-        downsample_ratio_mode,
-        action
-    )
-    assert_pico_ok(status['setDataBuffers'])
+    for ind, source in enumerate(sources.items()):
+    
+        source_name = source[0]
+        source_handle = source[1]
+
+        buffer_max[source_name] = (ctypes.c_int16 * n_samples)()
+        buffer_min[source_name] = (ctypes.c_int16 * n_samples)() # used for downsampling which isn't in the scope of this example
+
+        # set data buffers
+        data_type = enums.PICO_DATA_TYPE['PICO_INT16_T']
+        waveform = 0
+        downsample_ratio_mode = enums.PICO_RATIO_MODE['PICO_RATIO_MODE_RAW']
+        clear = enums.PICO_ACTION['PICO_CLEAR_ALL']
+        add = enums.PICO_ACTION['PICO_ADD']
+        action = clear|add if ind == 0 else add
+        status['setDataBuffers'] = ps.ps6000aSetDataBuffers(
+            handle,
+            source_handle,
+            ctypes.byref(buffer_max[source_name]),
+            ctypes.byref(buffer_min[source_name]),
+            n_samples,
+            data_type,
+            waveform,
+            downsample_ratio_mode,
+            action
+        )
+        assert_pico_ok(status['setDataBuffers'])
     
     # run block capture
     time_indisposed_ms = ctypes.c_double(0)
@@ -362,8 +370,8 @@ def read_channel_runblock(status, handle, resolution, source, channel_name='A', 
     assert_pico_ok(status['getAdcLimits'])
 
     # convert ADC counts data to mV
-    channel_range = channel_ranges[f'PICO_{range_V}'] # FIXME
-    adc2mV_chmax = adc2mV(buffer_max, channel_range, max_ADC)
+    channel_range = channel_ranges[f'PICO_{range_V}']
+    adc2mV_chmax = {channel_name: adc2mV(channel_buffer, channel_range, max_ADC) for channel_name, channel_buffer in buffer_max.items()}
 
     # create time data
     time = np.linspace(0, (n_samples) * time_interval.value * 1.e+9, n_samples)
