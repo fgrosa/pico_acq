@@ -127,6 +127,74 @@ def generate_signal(status, handle, func='PICO_SINE', **kwargs):
     )
     assert_pico_ok(status['sigGenApply'])
 
+def set_trigger(status, handle, source, trigger_thrs_mV, resolution, channel_range, direction = 'RISING_OR_FALLING'):
+
+    print("setting up advanced trigger")
+
+    # some preparatory steps: get max ADC value
+    min_ADC = ctypes.c_int16()
+    max_ADC = ctypes.c_int16()
+    status['getAdcLimits'] = ps.ps6000aGetAdcLimits(
+        handle,
+        resolution,
+        ctypes.byref(min_ADC),
+        ctypes.byref(max_ADC)
+    )
+    assert_pico_ok(status['getAdcLimits'])
+
+    # convert trigger threshold from mV to ADC counts
+    pico_channel_range = PICO_CONNECT_PROBE_RANGE[channel_range]
+    trigger_thrs_adc = mV2adc(trigger_thrs_mV, pico_channel_range, max_ADC)
+    trigger_hyst_adc = abs(mV2adc(trigger_thrs_mV * 0.02, pico_channel_range, max_ADC))
+
+    # actual trigger setup starts here
+    # set up the trigger channel conditions
+    trigger_cond = structs.PICO_CONDITION(enums.PICO_CHANNEL["PICO_CHANNEL_A"], 
+                                          enums.Pico_TRIGGER_STATE["PICO_CONDITION_TRUE"]
+    )
+    status['setTrigConds'] = ps.ps6000aSetTriggerChannelConditions(handle, 
+                                                                   ctypes.byref(trigger_cond), 
+                                                                   1, 
+                                                                   enums.PICO_ACTION['PICO_CLEAR_ALL']
+    )
+    assert_pico_ok(status['setTrigConds'])
+
+    # for channel in ["B"]:
+    #     other_channel = structs.PICO_CONDITION(enums.PICO_CHANNEL[f'PICO_CHANNEL_{channel}'], 
+    #                                            enums.Pico_TRIGGER_STATE["PICO_CONDITION_DONT_CARE"])
+    #     status['setTrigConds'] = ps.ps6000aSetTriggerChannelConditions(handle, ctypes.byref(other_channel), 1, 
+    #                                                                     enums.PICO_ACTION['PICO_ADD'])
+    #     assert_pico_ok(status['setTrigConds'])
+    
+    # set the trigger channel directions
+    trigger_dir = structs.PICO_DIRECTION(enums.PICO_CHANNEL["PICO_CHANNEL_A"], 
+                                         enums.PICO_THRESHOLD_DIRECTION["PICO_FALLING"],
+                                         enums.PICO_THRESHOLD_MODE["PICO_LEVEL"]
+    )
+    status['setTrigDir'] = ps.ps6000aSetTriggerChannelDirections(handle,
+                                                                 ctypes.byref(trigger_dir),
+                                                                 1
+    )
+    assert_pico_ok(status['setTrigDir'])
+
+    # set any additional properties
+    trigger_props = structs.PICO_TRIGGER_CHANNEL_PROPERTIES(trigger_thrs_adc, 
+                                                            trigger_hyst_adc, 
+                                                            trigger_thrs_adc, 
+                                                            trigger_hyst_adc,
+                                                            enums.PICO_CHANNEL["PICO_CHANNEL_A"]
+    )
+
+    auxOutputEnable = 0
+    autoTriggerMicroSeconds = 0
+    status['setTrigProps'] = ps.ps6000aSetTriggerChannelProperties(handle, 
+                                                                   ctypes.byref(trigger_props), 
+                                                                   1, 
+                                                                   auxOutputEnable, 
+                                                                   autoTriggerMicroSeconds
+    )
+    assert_pico_ok(status['setTrigProps'])
+
 def set_simple_trigger(status, handle, source, trigger_thrs_mV, resolution, channel_range, direction = 'RISING_OR_FALLING', dummy = False):
     '''
     Method to setup a trigger
@@ -154,7 +222,7 @@ def set_simple_trigger(status, handle, source, trigger_thrs_mV, resolution, chan
         mV2adc(trigger_thrs_mV, pico_channel_range, max_ADC),
         pico_direction,
         0,  # delay = 0 s
-        1000000  # autoTriggerMicroSeconds
+        0  # autoTriggerMicroSeconds
     )
     assert_pico_ok(status['setSimpleTrigger'])
 
