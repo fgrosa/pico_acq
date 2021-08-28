@@ -5,7 +5,7 @@ from picosdk.functions import assert_pico_ok
 
 from .utils import (
     turnon_readout_channel_DC,
-    set_trigger,
+    set_simple_trigger,
     read_channel_streaming,
     read_channel_runblock,
 )
@@ -46,9 +46,9 @@ class PS6000a:
 
         return self.readout_channels
         
-    def set_trigger(self, threshold_mV, direction, channel = "A"):
+    def set_simple_trigger(self, threshold_mV, direction, channel = "A"):
         
-        set_trigger(
+        set_simple_trigger(
             self.status,
             self.handle,
             self.readout_channels[channel],

@@ -127,8 +127,7 @@ def generate_signal(status, handle, func='PICO_SINE', **kwargs):
     )
     assert_pico_ok(status['sigGenApply'])
 
-
-def set_trigger(status, handle, source, trigger_thrs_mV, resolution, channel_range, direction = 'RISING_OR_FALLING', dummy = False):
+def set_simple_trigger(status, handle, source, trigger_thrs_mV, resolution, channel_range, direction = 'RISING_OR_FALLING', dummy = False):
     '''
     Method to setup a trigger
     '''
