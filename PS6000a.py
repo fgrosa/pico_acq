@@ -5,9 +5,11 @@ from picosdk.functions import assert_pico_ok
 
 from .utils import (
     turnon_readout_channel_DC,
+    compose_trigger_DNF,
+    trigger_condition_on_channel,
     set_simple_trigger,
     read_channel_streaming,
-    read_channel_runblock,
+    read_channel_runblock
 )
 
 class PS6000a:
@@ -27,9 +29,6 @@ class PS6000a:
     def __del__(self):
         self.status['stop'] = ps.ps6000aStop(self.handle)
         
-    # coupling = enums.PICO_COUPLING['PICO_DC_50OHM']
-    # range_V = 'PICO_10MV'
-
     def activate_channels(self, channels_on, channel_ranges, channel_couplings):
 
         self.readout_channels = turnon_readout_channel_DC(
@@ -46,6 +45,21 @@ class PS6000a:
 
         return self.readout_channels
         
+    def set_coincidence_trigger(self, channels, thresholds_mV, directions):
+        
+        trigs = []
+        for channel, threshold_mV, direction in zip(channels, thresholds_mV, directions):
+            cur_trig = trigger_condition_on_channel(self.status, self.handle, self.resolution, 
+                                                    channel = f'PICO_CHANNEL_{channel}',
+                                                    channel_range = self.channel_ranges[channel],
+                                                    trigger_thrs_mV = threshold_mV,
+                                                    trigger_direction = direction
+            )
+            trigs.append(cur_trig)
+
+        # build a simple AND
+        compose_trigger_DNF(self.status, self.handle, conjunction_0 = trigs)
+
     def set_simple_trigger(self, threshold_mV, direction, channel = "A"):
         
         set_simple_trigger(

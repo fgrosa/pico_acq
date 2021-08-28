@@ -127,9 +127,8 @@ def generate_signal(status, handle, func='PICO_SINE', **kwargs):
     )
     assert_pico_ok(status['sigGenApply'])
 
-def set_trigger(status, handle, source, trigger_thrs_mV, resolution, channel_range, direction = 'RISING_OR_FALLING'):
-
-    print("setting up advanced trigger")
+def trigger_condition_on_channel(status, handle, resolution, channel, channel_range, trigger_thrs_mV, trigger_direction,
+                                 rearm_hysteresis_relative = 0.02, inverted = False):
 
     # some preparatory steps: get max ADC value
     min_ADC = ctypes.c_int16()
@@ -145,62 +144,80 @@ def set_trigger(status, handle, source, trigger_thrs_mV, resolution, channel_ran
     # convert trigger threshold from mV to ADC counts
     pico_channel_range = PICO_CONNECT_PROBE_RANGE[channel_range]
     trigger_thrs_adc = mV2adc(trigger_thrs_mV, pico_channel_range, max_ADC)
-    trigger_hyst_adc = abs(mV2adc(trigger_thrs_mV * 0.02, pico_channel_range, max_ADC))
-
-    # actual trigger setup starts here
-    # set up the trigger channel conditions
-    trigger_cond_A = structs.PICO_CONDITION(enums.PICO_CHANNEL["PICO_CHANNEL_A"], 
-                                            enums.Pico_TRIGGER_STATE["PICO_CONDITION_TRUE"]
-    )
-    trigger_cond_E = structs.PICO_CONDITION(enums.PICO_CHANNEL["PICO_CHANNEL_E"], 
-                                            enums.Pico_TRIGGER_STATE["PICO_CONDITION_TRUE"]
-    )
-    trigger_conds = [trigger_cond_A, trigger_cond_E]
-    pico_trigger_conds = (structs.PICO_CONDITION * len(trigger_conds))(*trigger_conds)
-
-    status['setTrigConds'] = ps.ps6000aSetTriggerChannelConditions(handle,
-                                                                   ctypes.byref(pico_trigger_conds),
-                                                                   len(trigger_conds), 
-                                                                   enums.PICO_ACTION['PICO_ADD'] | enums.PICO_ACTION['PICO_CLEAR_ALL']
-    )
-    assert_pico_ok(status['setTrigConds'])
+    trigger_hyst_adc = abs(mV2adc(trigger_thrs_mV * rearm_hysteresis_relative, pico_channel_range, max_ADC))
     
-    # set the trigger channel directions    
-    trigger_dir_A = structs.PICO_DIRECTION(enums.PICO_CHANNEL["PICO_CHANNEL_A"], 
-                                           enums.PICO_THRESHOLD_DIRECTION["PICO_FALLING"],
-                                           enums.PICO_THRESHOLD_MODE["PICO_LEVEL"]
+    trigger_cond = structs.PICO_CONDITION(enums.PICO_CHANNEL[channel], 
+                                          enums.Pico_TRIGGER_STATE["PICO_CONDITION_FALSE"] if inverted else enums.Pico_TRIGGER_STATE["PICO_CONDITION_TRUE"]
     )
-    trigger_dir_E = structs.PICO_DIRECTION(enums.PICO_CHANNEL["PICO_CHANNEL_E"], 
-                                           enums.PICO_THRESHOLD_DIRECTION["PICO_FALLING"],
-                                           enums.PICO_THRESHOLD_MODE["PICO_LEVEL"]
+    
+    trigger_dir = structs.PICO_DIRECTION(enums.PICO_CHANNEL[channel], 
+                                         enums.PICO_THRESHOLD_DIRECTION[trigger_direction],
+                                         enums.PICO_THRESHOLD_MODE["PICO_LEVEL"]
     )
-    trigger_dirs = [trigger_dir_A, trigger_dir_E]
-    pico_trigger_dirs = (structs.PICO_DIRECTION * len(trigger_dirs))(*trigger_dirs)
+    
+    trigger_prop = structs.PICO_TRIGGER_CHANNEL_PROPERTIES(trigger_thrs_adc, 
+                                                           trigger_hyst_adc, 
+                                                           trigger_thrs_adc, 
+                                                           trigger_hyst_adc,
+                                                           enums.PICO_CHANNEL[channel]
+    )
+    
+    return (trigger_cond, trigger_dir, trigger_prop)
 
+def compose_trigger_DNF(status, handle, autoTriggerMicroSeconds = 0, **kwargs):
+
+    """
+    Sets up the complete trigger in disjunctive normal form (DNF). 
+    The final trigger will be the disjunction of all passed conjunctions.
+    Call like: 
+
+         compose_trigger_DNF(status, handle, conjuction_0 = [ ... ], conjunction_1 = [ ... ], ...)
+    """
+
+    trigger_props = []
+    trigger_dirs = []
+
+    ind = 0
+    while True:
+        if f'conjunction_{ind}' in kwargs:
+
+            cur_conj = kwargs[f'conjunction_{ind}']
+
+            # construct the full disjunction of the individual conjunctions
+            if ind == 0:
+                cur_mode = enums.PICO_ACTION['PICO_ADD'] | enums.PICO_ACTION['PICO_CLEAR_ALL']
+            else:
+                cur_mode = enums.PICO_ACTION['PICO_ADD']
+
+            cur_conds = [cur_trig[0] for cur_trig in cur_conj]
+            pico_trigger_conds = (structs.PICO_CONDITION * len(cur_conds))(*cur_conds)
+            status['setTrigConds'] = ps.ps6000aSetTriggerChannelConditions(handle,
+                                                                           ctypes.byref(pico_trigger_conds),
+                                                                           len(cur_conds), 
+                                                                           cur_mode
+            )
+            assert_pico_ok(status['setTrigConds'])
+
+            # extract the trigger properties and trigger directions that are set later            
+            cur_dirs = [cur_trig[1] for cur_trig in cur_conj]
+            cur_props = [cur_trig[2] for cur_trig in cur_conj]
+
+            trigger_props += cur_props
+            trigger_dirs += cur_dirs
+        else:
+            break
+
+        ind += 1
+
+    pico_trigger_dirs = (structs.PICO_DIRECTION * len(trigger_dirs))(*trigger_dirs)
     status['setTrigDir'] = ps.ps6000aSetTriggerChannelDirections(handle,
                                                                  ctypes.byref(pico_trigger_dirs),
                                                                  len(trigger_dirs)
     )
     assert_pico_ok(status['setTrigDir'])
 
-    # set any additional properties
-    trigger_prop_A = structs.PICO_TRIGGER_CHANNEL_PROPERTIES(trigger_thrs_adc, 
-                                                           trigger_hyst_adc, 
-                                                           trigger_thrs_adc, 
-                                                           trigger_hyst_adc,
-                                                           enums.PICO_CHANNEL["PICO_CHANNEL_A"]
-    )
-    trigger_prop_E = structs.PICO_TRIGGER_CHANNEL_PROPERTIES(trigger_thrs_adc, 
-                                                           trigger_hyst_adc, 
-                                                           trigger_thrs_adc, 
-                                                           trigger_hyst_adc,
-                                                           enums.PICO_CHANNEL["PICO_CHANNEL_E"]
-    )
-    trigger_props = [trigger_prop_A, trigger_prop_E]
+    auxOutputEnable = 0 # AUX trigger output is not supported :-(
     pico_trigger_props = (structs.PICO_TRIGGER_CHANNEL_PROPERTIES * len(trigger_props))(*trigger_props)
-
-    auxOutputEnable = 0
-    autoTriggerMicroSeconds = 0
     status['setTrigProps'] = ps.ps6000aSetTriggerChannelProperties(handle, 
                                                                    ctypes.byref(pico_trigger_props), 
                                                                    len(trigger_props), 
