@@ -71,7 +71,8 @@ def generate_signal(status, handle, func='PICO_SINE', **kwargs):
     offset_volts = kwargs.get('offset_volts', 0.)
     frequency_hz = kwargs.get('frequency_hz', 10000)
     buffer_length = kwargs.get('buffer_length', 100000)
-    duty_cycle_percent = kwargs.get('duty_cycle_percent', 50.)
+    duty_cycle_percent = kwargs.get('duty_cycle_percent', 50.)    
+    trigger_from_scope = kwargs.get('trigger_from_scope', False)
 
     # Set signal generator waveform
     wavetype = enums.PICO_WAVE_TYPE[func]
@@ -97,19 +98,20 @@ def generate_signal(status, handle, func='PICO_SINE', **kwargs):
     assert_pico_ok(status['sigGenFreq'])
 
     # Set signal generator trigger event
-    status['sigGenTrigger'] = ps.ps6000aSigGenTrigger(
-        handle,
-        enums.PICO_SIGGEN_TRIG_TYPE['PICO_SIGGEN_RISING'],
-        enums.PICO_SIGGEN_TRIG_SOURCE['PICO_SIGGEN_SCOPE_TRIG'],
-        1, # only play a single cycle
-        0 # no auto-trigger
-    )
-    assert_pico_ok(status['sigGenTrigger'])
+    if trigger_from_scope:
+        status['sigGenTrigger'] = ps.ps6000aSigGenTrigger(
+            handle,
+            enums.PICO_SIGGEN_TRIG_TYPE['PICO_SIGGEN_RISING'],
+            enums.PICO_SIGGEN_TRIG_SOURCE['PICO_SIGGEN_SCOPE_TRIG'],
+            1, # only play a single cycle
+            0 # no auto-trigger
+        )
+        assert_pico_ok(status['sigGenTrigger'])
     
     # Apply signal generator settings
     sig_gen_enabled = 1
     sweep_enabled = 0
-    trigger_enabled = 1
+    trigger_enabled = 1 if trigger_from_scope else 0
     auto_clock_opt_enabled = 0
     override_auto_clock_and_prescale = 0
     frequency = ctypes.c_int16(frequency_hz)
