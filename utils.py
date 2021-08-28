@@ -395,6 +395,158 @@ def timebase2sample_interval_ns(timebase):
 
     return sample_interval_ns
 
+def read_channel_rapidblock(status, handle, resolution, sources, source_ranges, sample_interval_ns, number_segments, **kwargs):
+
+    n_pretrigger_samples = kwargs.get('n_pretrigger_samples', 10000)
+    n_posttrigger_samples = kwargs.get('n_posttrigger_samples', 90000)
+
+    if sample_interval_ns < 0:
+        timebase = ctypes.c_uint32(0)
+        sample_interval_s = ctypes.c_double(0)
+
+        # use the fastest available timebase
+        enabled_channel_flags = sum([enums.PICO_CHANNEL_FLAGS[f'PICO_CHANNEL_{channel_name}_FLAGS'] for channel_name in sources.keys()])
+        status['getMinimumTimebaseStateless'] = ps.ps6000aGetMinimumTimebaseStateless(
+            handle,
+            enabled_channel_flags,
+            ctypes.byref(timebase),
+            ctypes.byref(sample_interval_s),
+            resolution
+        )
+        
+        timebase = timebase.value
+        sample_interval_ns = sample_interval_s.value * 1e9
+    else:
+        # pick the timebase that's closest to the demanded value
+        timebase = sample_interval_ns2timebase(sample_interval_ns)
+        sample_interval_ns = timebase2sample_interval_ns(timebase)
+        
+    # set number of samples to be collected
+    n_samples = n_pretrigger_samples + n_posttrigger_samples
+
+    # set number of memory segments
+    max_samples = ctypes.c_uint64(0)
+    status['memorySegments'] = ps.ps6000aMemorySegments(handle, number_segments, ctypes.byref(max_samples))
+
+    status['noCaptures'] = ps.ps6000aSetNoOfCaptures(handle, number_segments)
+    assert_pico_ok(status['noCaptures'])
+
+    # create buffers for all channels and segments
+    buffer_min = {}
+    buffer_max = {}
+
+    for channel_ind, (source_name, source_handle) in enumerate(sources.items()):
+
+        channel_buffers_max = []
+        channel_buffers_min = []
+
+        for segment_ind in range(number_segments):
+            cur_channel_buffer_max = (ctypes.c_int16 * n_samples)()
+            cur_channel_buffer_min = (ctypes.c_int16 * n_samples)()
+
+            # set data buffers
+            data_type = enums.PICO_DATA_TYPE['PICO_INT16_T']
+            waveform = segment_ind
+            downsample_ratio_mode = enums.PICO_RATIO_MODE['PICO_RATIO_MODE_RAW']
+            clear = enums.PICO_ACTION['PICO_CLEAR_ALL']
+            add = enums.PICO_ACTION['PICO_ADD']
+            action = clear|add if channel_ind + segment_ind == 0 else add
+            status['setDataBuffers'] = ps.ps6000aSetDataBuffers(
+                handle,
+                source_handle,
+                ctypes.byref(cur_channel_buffer_max),
+                ctypes.byref(cur_channel_buffer_min),
+                n_samples,
+                data_type,
+                waveform,
+                downsample_ratio_mode,
+                action
+            )
+            assert_pico_ok(status['setDataBuffers'])
+
+            channel_buffers_max.append(cur_channel_buffer_max)
+            channel_buffers_min.append(cur_channel_buffer_min)
+    
+        buffer_min[source_name] = channel_buffers_min
+        buffer_max[source_name] = channel_buffers_max
+
+    # run block capture
+    time_indisposed_ms = ctypes.c_double(0)
+    status['runBlock'] = ps.ps6000aRunBlock(
+        handle,
+        n_pretrigger_samples,
+        n_posttrigger_samples,
+        timebase,
+        ctypes.byref(time_indisposed_ms),
+        0,  # segmentIndex
+        None,  # lpReady = None   Using IsReady rather than a callback
+        None  # pParameter
+    )
+    assert_pico_ok(status['runBlock'])
+
+    # check for data collection to finish using ps6000aIsReady
+    ready = ctypes.c_int16(0)
+    check = ctypes.c_int16(0)
+    while ready.value == check.value:
+        status['isReady'] = ps.ps6000aIsReady(handle, ctypes.byref(ready))
+
+    # get data from scope
+    n_of_samples = ctypes.c_uint64(n_samples)
+    overflow = (ctypes.c_int16 * number_segments)() # voltage overflow flags for each segment
+    status['getValues'] = ps.ps6000aGetValuesBulk(handle, 
+                                                  0,  # startIndex
+                                                  ctypes.byref(n_of_samples),
+                                                  0,  # fromSegmentIndex
+                                                  number_segments - 1,  # toSegmentIndex
+                                                  1,   # downSampleRatio
+                                                  downsample_ratio_mode,
+                                                  ctypes.byref(overflow)
+    )
+    assert_pico_ok(status['getValues'])
+
+    # retrieve the trigger time offsets for the individual segments
+    trigger_infos = (structs.PICO_TRIGGER_INFO * number_segments)()
+    status['triggerInfo'] = ps.ps6000aGetTriggerInfo(handle,
+                                                     ctypes.byref(trigger_infos),
+                                                     0,
+                                                     number_segments
+    )
+    assert_pico_ok(status['triggerInfo'])
+
+    trigger_time_offsets = [sample_interval_ns * (trigger_infos[cur].timeStampCounter - trigger_infos[0].timeStampCounter) for cur in range(number_segments)]
+
+    print([cur for cur in trigger_time_offsets])
+
+    # get max ADC value
+    min_ADC = ctypes.c_int16()
+    max_ADC = ctypes.c_int16()
+    status['getAdcLimits'] = ps.ps6000aGetAdcLimits(
+        handle,
+        resolution,
+        ctypes.byref(min_ADC),
+        ctypes.byref(max_ADC)
+    )
+    assert_pico_ok(status['getAdcLimits'])
+
+    # convert ADC counts data to mV
+    waveform_mV = {}
+
+    for source_name in sources.keys():
+        cur_source_range = source_ranges[source_name]
+        cur_channel_range = PICO_CONNECT_PROBE_RANGE[cur_source_range]
+        
+        channel_segments_mV = []
+        for segment_ind in range(number_segments):
+            cur_segment_mV = adc2mV(buffer_max[source_name][segment_ind], cur_channel_range, max_ADC)
+            channel_segments_mV.append(cur_segment_mV)
+            
+        waveform_mV[source_name] = channel_segments_mV
+
+    # create time data
+    times = [np.linspace(0, (n_samples - 1) * sample_interval_ns, n_samples) + offset for offset in trigger_time_offsets]
+
+    return waveform_mV, times
+
 def read_channel_runblock(status, handle, resolution, sources, source_ranges, sample_interval_ns, **kwargs):
     '''
     Method to read out a signal with a given source channel using the runBlock functionality
