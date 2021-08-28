@@ -9,7 +9,8 @@ from .utils import (
     trigger_condition_on_channel,
     set_simple_trigger,
     read_channel_streaming,
-    read_channel_runblock
+    read_channel_runblock,
+    read_channel_rapidblock
 )
 
 class PS6000a:
@@ -72,7 +73,7 @@ class PS6000a:
             direction = direction
         )
 
-    def acquire(self, n_pretrigger_samples, n_posttrigger_samples, sample_interval_ns, mode = 'runBlock'):
+    def acquire(self, n_pretrigger_samples, n_posttrigger_samples, sample_interval_ns, mode = 'runBlock', **kwargs):
         
         if mode == 'runStreaming':
             sig, time = read_channel_streaming(
@@ -96,6 +97,18 @@ class PS6000a:
                 sample_interval_ns = sample_interval_ns,
                 n_pretrigger_samples=n_pretrigger_samples,
                 n_posttrigger_samples=n_posttrigger_samples
+            )
+        elif mode == 'rapidBlock':
+            sig, time = read_channel_rapidblock(
+                self.status,
+                self.handle,
+                self.resolution,
+                sources = self.readout_channels,
+                source_ranges = self.channel_ranges,
+                sample_interval_ns = sample_interval_ns,
+                number_segments = kwargs.get("number_segments", 1),
+                n_pretrigger_samples=n_pretrigger_samples,
+                n_posttrigger_samples=n_posttrigger_samples                
             )
         else:
             raise NotImplementedError(f'Mode {mode} unknown!')
