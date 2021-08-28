@@ -13,17 +13,17 @@ from picosdk.functions import adc2mV, mV2adc, assert_pico_ok
 
 # for some reasons there is no PICO_CONNECT_PROBE_RANGE in picoEnum
 PICO_CONNECT_PROBE_RANGE = {
-    'PICO_10MV': 1,
-    'PICO_20MV': 2,
-    'PICO_50MV': 3,
-    'PICO_100MV': 4,
-    'PICO_200MV': 5,
-    'PICO_500MV': 6,
-    'PICO_1V': 7,
-    'PICO_2V': 8,
-    'PICO_5V': 9,
-    'PICO_10V': 10,
-    'PICO_20V': 11
+    'PICO_10MV': 0,
+    'PICO_20MV': 1,
+    'PICO_50MV': 2,
+    'PICO_100MV': 3,
+    'PICO_200MV': 4,
+    'PICO_500MV': 5,
+    'PICO_1V': 6,
+    'PICO_2V': 7,
+    'PICO_5V': 8,
+    'PICO_10V': 9,
+    'PICO_20V': 10
 }
 
 def turnon_readout_channel_DC(status, handle, channel_names, channel_ranges, channel_couplings, **kwargs):
