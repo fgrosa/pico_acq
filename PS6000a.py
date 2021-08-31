@@ -54,7 +54,7 @@ class PS6000a:
                                                     channel = f'PICO_CHANNEL_{channel}',
                                                     channel_range = self.channel_ranges[channel],
                                                     trigger_thrs_mV = threshold_mV,
-                                                    trigger_direction = direction
+                                                    threshold_direction = direction
             )
             trigs.append(cur_trig)
 
@@ -73,7 +73,7 @@ class PS6000a:
             direction = direction
         )
 
-    def acquire(self, n_pretrigger_samples, n_posttrigger_samples, sample_interval_ns, mode = 'runBlock', **kwargs):
+    def acquire(self, sample_interval_ns, mode = 'runBlock', **kwargs):
         
         if mode == 'runStreaming':
             sig, time = read_channel_streaming(
@@ -81,8 +81,8 @@ class PS6000a:
                 self.handle,
                 self.resolution,
                 self.readout_channels,
-                n_pretrigger_samples=n_pretrigger_samples,
-                n_posttrigger_samples=n_posttrigger_samples,
+                n_pretrigger_samples=kwargs["n_pretrigger_samples"],
+                n_posttrigger_samples=kwargs["n_posttrigger_samples"],
                 sample_interval=2,
                 time_units='NS',
                 range_V = '10MV'
@@ -95,8 +95,8 @@ class PS6000a:
                 sources = self.readout_channels,
                 source_ranges = self.channel_ranges,
                 sample_interval_ns = sample_interval_ns,
-                n_pretrigger_samples=n_pretrigger_samples,
-                n_posttrigger_samples=n_posttrigger_samples
+                n_pretrigger_samples=kwargs["n_pretrigger_samples"],
+                n_posttrigger_samples=kwargs["n_posttrigger_samples"]
             )
         elif mode == 'rapidBlock':
             sig, time = read_channel_rapidblock(
@@ -107,8 +107,7 @@ class PS6000a:
                 source_ranges = self.channel_ranges,
                 sample_interval_ns = sample_interval_ns,
                 number_segments = kwargs.get("number_segments", 1),
-                n_pretrigger_samples=n_pretrigger_samples,
-                n_posttrigger_samples=n_posttrigger_samples                
+                acq_window_ns = kwargs.get("acq_window_ns")
             )
         else:
             raise NotImplementedError(f'Mode {mode} unknown!')

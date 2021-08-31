@@ -131,7 +131,7 @@ def generate_signal(status, handle, func='PICO_SINE', **kwargs):
     assert_pico_ok(status['sigGenApply'])
 
 def trigger_condition_on_channel(status, handle, resolution, channel, channel_range, trigger_thrs_mV, threshold_direction,
-                                 thrsehold_mode = "PICO_LEVEL", rearm_hysteresis_relative = 0.02, inverted = False):
+                                 threshold_mode = "PICO_LEVEL", rearm_hysteresis_relative = 0.02, inverted = False):
 
     # some preparatory steps: get max ADC value
     min_ADC = ctypes.c_int16()
@@ -398,9 +398,6 @@ def timebase2sample_interval_ns(timebase):
 
 def read_channel_rapidblock(status, handle, resolution, sources, source_ranges, sample_interval_ns, number_segments, **kwargs):
 
-    n_pretrigger_samples = kwargs.get('n_pretrigger_samples', 10000)
-    n_posttrigger_samples = kwargs.get('n_posttrigger_samples', 90000)
-
     if sample_interval_ns < 0:
         timebase = ctypes.c_uint32(0)
         sample_interval_s = ctypes.c_double(0)
@@ -421,6 +418,10 @@ def read_channel_rapidblock(status, handle, resolution, sources, source_ranges, 
         # pick the timebase that's closest to the demanded value
         timebase = sample_interval_ns2timebase(sample_interval_ns)
         sample_interval_ns = timebase2sample_interval_ns(timebase)
+
+    acq_window_ns = kwargs.get('acq_window_ns', 100)
+    n_pretrigger_samples = int(acq_window_ns / sample_interval_ns / 2)
+    n_posttrigger_samples = n_pretrigger_samples
         
     # set number of samples to be collected
     n_samples = n_pretrigger_samples + n_posttrigger_samples
