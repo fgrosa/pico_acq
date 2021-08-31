@@ -9,6 +9,7 @@ import numpy as np
 from picosdk.ps6000a import ps6000a as ps
 from picosdk.PicoDeviceEnums import picoEnum as enums
 from picosdk.PicoDeviceStructs import picoStruct as structs
+from picosdk.constants import PICO_STATUS
 from picosdk.functions import adc2mV, mV2adc, assert_pico_ok
 
 # for some reasons there is no PICO_CONNECT_PROBE_RANGE in picoEnum
@@ -129,8 +130,8 @@ def generate_signal(status, handle, func='PICO_SINE', **kwargs):
     )
     assert_pico_ok(status['sigGenApply'])
 
-def trigger_condition_on_channel(status, handle, resolution, channel, channel_range, trigger_thrs_mV, trigger_direction,
-                                 rearm_hysteresis_relative = 0.02, inverted = False):
+def trigger_condition_on_channel(status, handle, resolution, channel, channel_range, trigger_thrs_mV, threshold_direction,
+                                 thrsehold_mode = "PICO_LEVEL", rearm_hysteresis_relative = 0.02, inverted = False):
 
     # some preparatory steps: get max ADC value
     min_ADC = ctypes.c_int16()
@@ -153,8 +154,8 @@ def trigger_condition_on_channel(status, handle, resolution, channel, channel_ra
     )
     
     trigger_dir = structs.PICO_DIRECTION(enums.PICO_CHANNEL[channel], 
-                                         enums.PICO_THRESHOLD_DIRECTION[trigger_direction],
-                                         enums.PICO_THRESHOLD_MODE["PICO_LEVEL"]
+                                         enums.PICO_THRESHOLD_DIRECTION[threshold_direction],
+                                         enums.PICO_THRESHOLD_MODE[threshold_mode]
     )
     
     trigger_prop = structs.PICO_TRIGGER_CHANNEL_PROPERTIES(trigger_thrs_adc, 
@@ -512,10 +513,23 @@ def read_channel_rapidblock(status, handle, resolution, sources, source_ranges, 
                                                      number_segments
     )
     assert_pico_ok(status['triggerInfo'])
+    
+    trigger_time_offsets_ns = []
+    for cur_segment in range(number_segments):
 
-    trigger_time_offsets = [sample_interval_ns * (trigger_infos[cur].timeStampCounter - trigger_infos[0].timeStampCounter) for cur in range(number_segments)]
+        cur_trigger = trigger_infos[cur_segment]
+        first_trigger = trigger_infos[0]
 
-    print([cur for cur in trigger_time_offsets])
+        cur_timestamp = cur_trigger.timeStampCounter
+        if cur_trigger.status == PICO_STATUS["PICO_DEVICE_TIME_STAMP_RESET"]:
+            cur_timestamp += 2e64
+
+        first_timestamp = first_trigger.timeStampCounter
+        if first_trigger.status == PICO_STATUS["PICO_DEVICE_TIME_STAMP_RESET"]:
+            first_timestamp += 2e64
+
+        cur_offset = sample_interval_ns * (cur_timestamp - first_timestamp)
+        trigger_time_offsets_ns.append(cur_offset)
 
     # get max ADC value
     min_ADC = ctypes.c_int16()
@@ -543,7 +557,7 @@ def read_channel_rapidblock(status, handle, resolution, sources, source_ranges, 
         waveform_mV[source_name] = channel_segments_mV
 
     # create time data
-    times = [np.linspace(0, (n_samples - 1) * sample_interval_ns, n_samples) + offset for offset in trigger_time_offsets]
+    times = [np.linspace(0, (n_samples - 1) * sample_interval_ns, n_samples) + offset for offset in trigger_time_offsets_ns]
 
     return waveform_mV, times
 
