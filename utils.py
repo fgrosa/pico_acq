@@ -228,7 +228,7 @@ def compose_trigger_DNF(status, handle, autoTriggerMicroSeconds = 0, **kwargs):
     )
     assert_pico_ok(status['setTrigProps'])
 
-def set_simple_trigger(status, handle, source, trigger_thrs_mV, resolution, channel_range, direction = 'RISING_OR_FALLING', dummy = False):
+def set_simple_trigger(status, handle, source, trigger_thrs_mV, resolution, channel_range, direction = 'RISING_OR_FALLING', dummy = False, autoTriggerMicroSeconds = 1000000):
     '''
     Method to setup a trigger
     '''
@@ -255,7 +255,7 @@ def set_simple_trigger(status, handle, source, trigger_thrs_mV, resolution, chan
         mV2adc(trigger_thrs_mV, pico_channel_range, max_ADC),
         pico_direction,
         0,  # delay = 0 s
-        0  # autoTriggerMicroSeconds
+        autoTriggerMicroSeconds
     )
     assert_pico_ok(status['setSimpleTrigger'])
 
