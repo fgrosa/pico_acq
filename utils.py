@@ -225,7 +225,7 @@ def compose_trigger_DNF(status, handle, autoTriggerMicroSeconds = 0, **kwargs):
                                                                    ctypes.byref(pico_trigger_props), 
                                                                    len(trigger_props), 
                                                                    auxOutputEnable, 
-                                                                   autoTriggerMicroSeconds
+                                                                   int(autoTriggerMicroSeconds)
     )
     assert_pico_ok(status['setTrigProps'])
 
@@ -674,9 +674,20 @@ def read_channel_runblock(status, handle, resolution, sources, source_ranges, sa
     for source_name in sources.keys():
         cur_source_range = source_ranges[source_name]
         cur_channel_range = PICO_CONNECT_PROBE_RANGE[cur_source_range]
-        waveform_mV[source_name] = adc2mV(buffer_max[source_name], cur_channel_range, max_ADC)
+        waveform_mV[source_name] = adc2mV_fast(buffer_max[source_name], cur_channel_range, max_ADC)
 
     # create time data
     time = np.linspace(0, (n_samples - 1) * sample_interval_ns, n_samples)
 
     return waveform_mV, time
+
+def adc2mV_fast(bufferADC, range, maxADC):
+
+    if not isinstance(bufferADC, np.ndarray):
+        bufferADC = np.array(bufferADC)
+
+    channelInputRanges = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000]
+    vRange = channelInputRanges[range]
+    bufferV = bufferADC * vRange / maxADC.value
+
+    return bufferV
