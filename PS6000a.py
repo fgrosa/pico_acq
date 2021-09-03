@@ -6,6 +6,7 @@ from picosdk.functions import assert_pico_ok
 from .utils import (
     turnon_readout_channel_DC,
     compose_trigger_DNF,
+    set_AUX_trigger,
     trigger_condition_on_channel,
     set_simple_trigger,
     read_channel_streaming,
@@ -60,6 +61,10 @@ class PS6000a:
 
         # build a simple AND
         compose_trigger_DNF(self.status, self.handle, conjunction_0 = trigs)
+
+    def set_AUX_trigger(self, autoTriggerMicroSeconds = 1000000, inverted = False):
+        
+        set_AUX_trigger(self.status, self.handle, autoTriggerMicroSeconds = autoTriggerMicroSeconds, inverted = inverted)
 
     def set_simple_trigger(self, threshold_mV, direction, channel = "A"):
         
