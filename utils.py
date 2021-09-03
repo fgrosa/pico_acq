@@ -229,6 +229,30 @@ def compose_trigger_DNF(status, handle, autoTriggerMicroSeconds = 0, **kwargs):
     )
     assert_pico_ok(status['setTrigProps'])
 
+def set_AUX_trigger(status, handle, autoTriggerMicroSeconds = 1000000, inverted = False):
+
+    aux_trigger_cond = structs.PICO_CONDITION(enums.PICO_CHANNEL["PICO_TRIGGER_AUX"], 
+                                              enums.Pico_TRIGGER_STATE["PICO_CONDITION_FALSE"] if inverted else enums.Pico_TRIGGER_STATE["PICO_CONDITION_TRUE"]
+                                          )
+
+    status['setTrigConds'] = ps.ps6000aSetTriggerChannelConditions(handle,
+                                                                   ctypes.byref(aux_trigger_cond),
+                                                                   1, 
+                                                                   enums.PICO_ACTION['PICO_ADD'] | enums.PICO_ACTION['PICO_CLEAR_ALL']
+                                                               )
+    assert_pico_ok(status['setTrigConds'])
+
+    # trigger_dir = structs.PICO_DIRECTION(enums.PICO_CHANNEL["PICO_TRIGGER_AUX"], 
+    #                                      enums.PICO_THRESHOLD_DIRECTION["PICO_ABOVE"],
+    #                                      enums.PICO_THRESHOLD_MODE["PICO_LEVEL"]
+    # )
+
+    # status['setTrigDir'] = ps.ps6000aSetTriggerChannelDirections(handle,
+    #                                                              ctypes.byref(trigger_dir),
+    #                                                              1
+    #                                                          )
+    # assert_pico_ok(status['setTrigDir'])
+
 def set_simple_trigger(status, handle, source, trigger_thrs_mV, resolution, channel_range, direction = 'RISING_OR_FALLING', dummy = False, autoTriggerMicroSeconds = 1000000):
     '''
     Method to setup a trigger
