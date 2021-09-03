@@ -242,16 +242,32 @@ def set_AUX_trigger(status, handle, autoTriggerMicroSeconds = 1000000, inverted 
                                                                )
     assert_pico_ok(status['setTrigConds'])
 
-    # trigger_dir = structs.PICO_DIRECTION(enums.PICO_CHANNEL["PICO_TRIGGER_AUX"], 
-    #                                      enums.PICO_THRESHOLD_DIRECTION["PICO_ABOVE"],
-    #                                      enums.PICO_THRESHOLD_MODE["PICO_LEVEL"]
-    # )
+    trigger_dir = structs.PICO_DIRECTION(enums.PICO_CHANNEL["PICO_TRIGGER_AUX"], 
+                                         enums.PICO_THRESHOLD_DIRECTION["PICO_ABOVE"],
+                                         enums.PICO_THRESHOLD_MODE["PICO_LEVEL"]
+    )
 
-    # status['setTrigDir'] = ps.ps6000aSetTriggerChannelDirections(handle,
-    #                                                              ctypes.byref(trigger_dir),
-    #                                                              1
-    #                                                          )
-    # assert_pico_ok(status['setTrigDir'])
+    status['setTrigDir'] = ps.ps6000aSetTriggerChannelDirections(handle,
+                                                                 ctypes.byref(trigger_dir),
+                                                                 1
+                                                             )
+    assert_pico_ok(status['setTrigDir'])
+
+    trigger_prop = structs.PICO_TRIGGER_CHANNEL_PROPERTIES(32000, # dummy
+                                                           3200,  # dummy
+                                                           0.0, 
+                                                           0.0,
+                                                           enums.PICO_CHANNEL["PICO_TRIGGER_AUX"]
+    )
+    auxOutputEnable = 0 # AUX trigger output is not supported :-(
+    status['setTrigProps'] = ps.ps6000aSetTriggerChannelProperties(handle, 
+                                                                   ctypes.byref(trigger_prop), 
+                                                                   1, 
+                                                                   auxOutputEnable, 
+                                                                   autoTriggerMicroSeconds
+    )
+    assert_pico_ok(status['setTrigProps'])
+
 
 def set_simple_trigger(status, handle, source, trigger_thrs_mV, resolution, channel_range, direction = 'RISING_OR_FALLING', dummy = False, autoTriggerMicroSeconds = 1000000):
     '''
