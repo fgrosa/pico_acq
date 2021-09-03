@@ -46,7 +46,7 @@ class PS6000a:
 
         return self.readout_channels
         
-    def set_coincidence_trigger(self, channels, thresholds_mV, directions):
+    def set_coincidence_trigger(self, channels, thresholds_mV, directions, autoTriggerMicroSeconds = 0):
         
         trigs = []
         for channel, threshold_mV, direction in zip(channels, thresholds_mV, directions):
@@ -59,7 +59,7 @@ class PS6000a:
             trigs.append(cur_trig)
 
         # build a simple AND
-        compose_trigger_DNF(self.status, self.handle, conjunction_0 = trigs)
+        compose_trigger_DNF(self.status, self.handle, conjunction_0 = trigs, autoTriggerMicroSeconds = autoTriggerMicroSeconds)
 
     def set_simple_trigger(self, threshold_mV, direction, channel = "A"):
         
