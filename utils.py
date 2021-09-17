@@ -229,36 +229,38 @@ def compose_trigger_DNF(status, handle, autoTriggerMicroSeconds = 0, **kwargs):
     )
     assert_pico_ok(status['setTrigProps'])
 
-def set_simple_trigger(status, handle, source, trigger_thrs_mV, resolution, channel_range, direction = 'RISING_OR_FALLING', dummy = False, autoTriggerMicroSeconds = 1000000):
-    '''
-    Method to setup a trigger
-    '''
+# def set_simple_trigger(status, handle, source, trigger_thrs_mV, resolution, channel_range, direction = 'RISING_OR_FALLING', dummy = False, autoTriggerMicroSeconds = 1000000):
+#     '''
+#     Method to setup a trigger on a single channel
+#     '''
+
     
-    # get max ADC value
-    min_ADC = ctypes.c_int16()
-    max_ADC = ctypes.c_int16()
-    status['getAdcLimits'] = ps.ps6000aGetAdcLimits(
-        handle,
-        resolution,
-        ctypes.byref(min_ADC),
-        ctypes.byref(max_ADC)
-    )
-    assert_pico_ok(status['getAdcLimits'])
+    
+    # # get max ADC value
+    # min_ADC = ctypes.c_int16()
+    # max_ADC = ctypes.c_int16()
+    # status['getAdcLimits'] = ps.ps6000aGetAdcLimits(
+    #     handle,
+    #     resolution,
+    #     ctypes.byref(min_ADC),
+    #     ctypes.byref(max_ADC)
+    # )
+    # assert_pico_ok(status['getAdcLimits'])
 
-    # set simple trigger
-    pico_direction = enums.PICO_THRESHOLD_DIRECTION[direction]
-    pico_channel_range = PICO_CONNECT_PROBE_RANGE[channel_range]
+    # # set simple trigger
+    # pico_direction = enums.PICO_THRESHOLD_DIRECTION[direction]
+    # pico_channel_range = PICO_CONNECT_PROBE_RANGE[channel_range]
 
-    status['setSimpleTrigger'] = ps.ps6000aSetSimpleTrigger(
-        handle,
-        0 if dummy else 1,
-        source,
-        mV2adc(trigger_thrs_mV, pico_channel_range, max_ADC),
-        pico_direction,
-        0,  # delay = 0 s
-        autoTriggerMicroSeconds
-    )
-    assert_pico_ok(status['setSimpleTrigger'])
+    # status['setSimpleTrigger'] = ps.ps6000aSetSimpleTrigger(
+    #     handle,
+    #     0 if dummy else 1,
+    #     source,
+    #     mV2adc(trigger_thrs_mV, pico_channel_range, max_ADC),
+    #     pico_direction,
+    #     0,  # delay = 0 s
+    #     autoTriggerMicroSeconds
+    # )
+    # assert_pico_ok(status['setSimpleTrigger'])
 
 
 def read_channel_streaming(status, handle, resolution, sources, **kwargs):
