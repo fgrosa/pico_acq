@@ -7,6 +7,7 @@ from .utils import (
     turnon_readout_channel_DC,
     compose_trigger_DNF,
     trigger_condition_on_channel,
+    set_simple_trigger,
     read_channel_streaming,
     read_channel_runblock,
     read_channel_rapidblock
@@ -60,10 +61,17 @@ class PS6000a:
         # build a simple AND
         compose_trigger_DNF(self.status, self.handle, conjunction_0 = trigs, autoTriggerMicroSeconds = autoTriggerMicroSeconds)
 
-    def set_simple_trigger(self, threshold_mV, direction, channel = "A", autoTriggerMicroSeconds = 0):
-
-        self.set_coincidence_trigger(channels = [channel], thresholds_mV = [threshold_mV], directions = [direction],
-                                     autoTriggerMicroSeconds = autoTriggerMicroSeconds)
+    def set_simple_trigger(self, threshold_mV, direction, channel = "A"):
+        
+        set_simple_trigger(
+            self.status,
+            self.handle,
+            self.readout_channels[channel],
+            trigger_thrs_mV = threshold_mV,
+            resolution = self.resolution,
+            channel_range = self.channel_ranges[channel],
+            direction = direction
+        )
 
     def acquire(self, sample_interval_ns, mode = 'runBlock', **kwargs):
         
